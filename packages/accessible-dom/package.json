@@ -1,6 +1,6 @@
 {
   "name": "@guided-web/accessible-dom",
-  "version": "0.1.0",
+  "version": "0.0.1-p0",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
@@ -15,7 +15,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "lint": "echo \"accessible-dom: no lint configured\""
+    "lint": "eslint src"
   },
   "dependencies": {
     "@guided-web/protocol": "workspace:*"

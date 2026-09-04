@@ -1,6 +1,6 @@
 {
   "name": "guided-web-assistant",
-  "version": "0.1.0",
+  "version": "0.0.1-p0",
   "private": true,
   "description": "A guided-navigation assistant that helps low-digital-confidence users understand and use web interfaces. The human remains the executor.",
   "license": "Apache-2.0",
@@ -10,13 +10,21 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "lint": "pnpm -r lint",
+    "lint": "eslint \"apps/*/src/**/*.ts\" \"packages/*/src/**/*.ts\" \"scripts/**/*.mjs\" \"eslint.config.mjs\"",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "test:unit": "pnpm -r test:unit",
     "test:integration": "pnpm -r test:integration",
     "test:e2e": "pnpm --filter @guided-web/extension test:e2e",
     "security:check": "node scripts/security-checks.mjs",
+    "security:git-history": "node scripts/git-secret-scan.mjs",
+    "verify": "pnpm lint && pnpm -r typecheck && pnpm -r test && pnpm build && pnpm security:check && pnpm security:git-history",
     "clean": "pnpm -r clean"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.0",
+    "eslint": "^9.9.0",
+    "globals": "^17.12.0",
+    "typescript-eslint": "^8.3.0"
   }
 }

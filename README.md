@@ -36,8 +36,12 @@ The system does **not** (in P0):
 ## Maturity and phase
 
 - **Project maturity:** experimental product-validation prototype.
-- **Current phase:** **P0** (Product Validation). Roadmap: see
-  `docs/ROADMAP.md`.
+- **P0 prototype implementation complete.**
+- **Human product validation pending.** The software prototype, security
+  baseline, test harness and validation tooling are complete, but we do not yet
+  know whether the assistant actually helps the target population. That is the
+  single remaining P0 outcome. Roadmap: see `docs/ROADMAP.md`.
+- **Versioning:** experimental prerelease (`0.0.1-p0`). Not a stable release.
 
 ## Supported browsers
 
@@ -66,9 +70,8 @@ Prerequisites: Node.js ≥ 20 and pnpm ≥ 10.
 
 ```bash
 pnpm install
-pnpm build
-pnpm test          # unit + integration
-pnpm test:e2e      # browser E2E (Playwright)
+pnpm verify     # lint + typecheck + tests + build + security checks
+pnpm test:e2e   # browser E2E (Playwright)
 ```
 
 ### Run the backend

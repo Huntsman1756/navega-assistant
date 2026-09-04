@@ -21,7 +21,7 @@ phase in which it is fully implemented.
 | P0-11 | No `click`, `type` or `submit` capability exists in the initial architecture. | P0 |
 | P0-12 | AI provider credentials exist only in backend configuration. | P0 |
 | P0-13 | Authoritative quotas are enforced server-side. | P2 |
-| P0-14 | Service-worker termination must not corrupt persistent session state. | P2 |
+| P0-14 | Service-worker termination must not corrupt persistent session state. | N/A in P0 (no persistent guidance session). Required in P1/P2 before persistent sessions are introduced. |
 | P0-15 | Structured output is not considered a complete safety boundary. Valid output still requires policy enforcement. | P0 |
 | P0-16 | The assistant must never ask the user to disclose a password, OTP, recovery code, CVV or equivalent secret to the assistant. | P0 |
 | P0-17 | Failure to resolve context must degrade safely to asking the user, escalation or blocking. It must never produce a silent guess. | P0 |
@@ -51,6 +51,13 @@ phase in which it is fully implemented.
   requests for secrets.
 - **P0-17:** The decision vocabulary has an explicit `cannot_help` outcome and
   the UI shows a clear failure message; nothing is silently guessed.
+- **P0-14 (N/A in P0):** P0 has no persistent guidance session. Every assist is
+  a self-contained request to the backend; the service worker is stateless.
+  `apps/extension/src/service-worker/logic.test.ts` verifies that a fresh
+  worker invocation always fetches from the backend (never reuses a prior
+  response) and that a backend failure yields `ok:false` — it can never present
+  a stale answer from a previous execution as valid. If a persistent session is
+  ever introduced (P1/P2), P0-14 becomes mandatory and must be re-verified.
 
 ---
 
@@ -62,4 +69,5 @@ phase in which it is fully implemented.
 - No screenshot redaction / vision policy yet (P0-18 is P2).
 - No target identity/resolution or stale-response guarding yet (P0-03/04/09/10
   are P1/P2).
-- No persistent session state across service-worker restarts (P0-14 is P2).
+- P0-14 is **N/A** because P0 holds no persistent guidance session; it becomes
+  mandatory when persistent sessions are added (P1/P2).

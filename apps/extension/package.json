@@ -1,15 +1,15 @@
 {
   "name": "@guided-web/extension",
-  "version": "0.1.0",
+  "version": "0.0.1-p0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo \"extension: e2e via playwright\"",
-    "test:unit": "echo \"extension: no unit tests\"",
+    "test": "vitest run",
+    "test:unit": "vitest run",
     "test:e2e": "playwright test",
-    "lint": "echo \"extension: no lint configured\""
+    "lint": "eslint src"
   },
   "dependencies": {
     "@guided-web/accessible-dom": "workspace:*",

@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Status
+- P0 prototype implementation complete.
+- Human product validation pending. This is an experimental prerelease
+  (`0.0.1-p0`).
+
 ### Added
 - P0 product-validation prototype: Guided Web Assistant
 

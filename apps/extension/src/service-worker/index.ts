@@ -5,6 +5,7 @@
  * layer: it opens the side panel and forwards sanitized assist requests to the
  * self-hostable backend. Provider credentials never live in the extension.
  */
+import { requestAssist } from "./logic";
 import type { AssistMessage, AssistResultMessage } from "../shared/messages";
 
 const DEFAULT_BACKEND_URL = "http://localhost:8787";
@@ -25,30 +26,7 @@ async function getBackendUrl(): Promise<string> {
 
 async function handleAssist(msg: AssistMessage): Promise<AssistResultMessage> {
   const baseUrl = await getBackendUrl();
-  try {
-    const res = await fetch(`${baseUrl}/v1/assist`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        protocolVersion: 1,
-        mode: "DOM_ONLY",
-        question: msg.question,
-        snapshot: msg.snapshot,
-      }),
-    });
-
-    const data = (await res.json().catch(() => null)) as
-      | { error?: string; decision?: unknown }
-      | null;
-
-    if (!res.ok || !data || !data.decision) {
-      return { type: "GWA_ASSIST_RESULT", ok: false, error: data?.error ?? "backend_error" };
-    }
-
-    return { type: "GWA_ASSIST_RESULT", ok: true, decision: data.decision as never };
-  } catch {
-    return { type: "GWA_ASSIST_RESULT", ok: false, error: "network" };
-  }
+  return requestAssist(baseUrl, msg.snapshot, msg.question);
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

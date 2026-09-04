@@ -28,6 +28,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Lint
+        run: pnpm lint
+
       - name: Typecheck
         run: pnpm -r typecheck
 
@@ -39,6 +42,9 @@ jobs:
 
       - name: Security checks (bundle + permissions)
         run: pnpm security:check
+
+      - name: Git history secret scan
+        run: pnpm security:git-history
 
       - name: Install Playwright browsers
         run: pnpm --filter @guided-web/extension exec playwright install --with-deps chromium

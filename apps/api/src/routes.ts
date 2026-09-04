@@ -64,7 +64,6 @@ export function createApp(provider: AIProvider, providerName: string, model?: st
     const simplicity = checkConversationSimplicity(message);
     if (!simplicity.ok) {
       // P0: report only, never block. Documented as a soft gate.
-      // eslint-disable-next-line no-console
       console.warn("[simplicity]", simplicity.issues.join("; "));
     }
 
