@@ -20,30 +20,58 @@ these questions with evidence:
 - which problems would a highlight overlay actually solve?
 - which problems have nothing to do with highlighting (context/model, UX/onboarding)?
 
-Examples of discriminating evidence:
-
-- “The model identifies the right control, but the person cannot find it
-  visually.” → evidence to build P1 (highlight).
-- “The model misinterprets what the form means.” → a highlight does not help;
-  improve context/model first.
-- “The person understood everything, but opening the assistant cost more than
-  asking a relative.” → a UX/onboarding problem, not target resolution.
-
 P1 is **deliberately blocked** until G1 produces this evidence.
 
-P0 is a **controlled, qualitative product-validation prototype**. The goal
-is NOT to demonstrate engineering sophistication. The goal is to answer:
+## Scope of the prototype being tested
 
-1. Can a model understand a compact DOM-derived representation well enough to
-   help a low-digital-confidence user?
-2. Are the instructions understandable and useful?
-3. Does assistance reduce abandonment or dependence on another person?
-4. How often is DOM-derived context sufficient?
-5. When does vision materially improve the answer?
+The P0 prototype has **no real vision/redaction flow** and no display of a
+highlight overlay. G1 therefore does **not** compare `DOM_ONLY` against
+`DOM_PLUS_VISION`. P0 is not modified to introduce that variable.
 
----
+Per assisted task, classify the outcome with one of:
 
-## Method
+```text
+DOM_ONLY_SUCCESS
+DOM_ONLY_FAILURE
+UNRESOLVED
+```
+
+and record a separate, annotated judgement (not a measured column):
+
+```text
+WOULD_VISION_PLAUSIBLY_HELP = yes | no | unknown
+```
+
+Only if a clearly defined and safe experimental vision mode existed would it
+make sense to later compare `DOM_ONLY` with `DOM_PLUS_VISION`.
+
+## Method (moderator observes, does not direct)
+
+**Crucial rule:** do not help the participant before the system has had a
+chance to fail. If the moderator points to the button, keeps rephrasing the
+question, or corrects the interaction, the session measures the moderator, not
+Navega.
+
+```text
+BASELINE
+person tries the task WITHOUT Navega
+        ↓
+record the outcome
+
+ASSISTED
+same class of difficulty WITH Navega
+        ↓
+moderator observes, does not direct
+        ↓
+record each turn and each failure
+
+POST-TASK
+short questions:
+- Did you find it easier?
+- Was there any explanation you did not understand?
+- Was there a moment you did not know where to look?
+- Would you have asked another person for help?
+```
 
 **Participants:** 3–4 people with intentionally different functional profiles.
 
@@ -76,41 +104,72 @@ turns per task
 confusion events
 ```
 
-> P0 findings are **directional and exploratory, not population estimates**.
+> Findings are **directional and exploratory, not population estimates**.
 > Per-domain and per-participant cells may contain too few observations for
 > statistical interpretation. Do not publish misleading percentages from tiny
 > cells.
 
-## Domain × context matrix
+## Key events to flag
 
-Record results by broad domain category.
+These four events are the ones that will actually decide P1:
 
 ```text
-                        DOM_ONLY  DOM+VISION  UNRESOLVED
+MODEL_WRONG
+The model mis-understands the page.
+
+GUIDANCE_UNCLEAR
+It understands the page but explains it poorly.
+
+TARGET_NOT_FOUND
+The instruction is correct, but the person cannot find the
+control visually.
+
+ASSISTANT_ACCESS_FRICTION
+The problem is opening/using Navega, not the web page.
+```
+
+Interpretation is then largely predetermined:
+
+```text
+a lot of TARGET_NOT_FOUND            → strong evidence to build P1 highlight
+a lot of MODEL_WRONG                 → improve context/model before P1
+a lot of GUIDANCE_UNCLEAR            → work on conversational policy/UX
+a lot of ASSISTANT_ACCESS_FRICTION   → fix entry/onboarding first
+```
+
+## Domain matrix
+
+Record results by broad domain category (the matrix discovers failure
+patterns, it does not estimate prevalence).
+
+```text
+                        DOM_ONLY_SUCCESS  DOM_ONLY_FAILURE  UNRESOLVED
 
 Webmail
 Social
 E-commerce
 Public administration
-Authentication/banking
+Authentication
 Documents/forms
 ```
 
-The matrix exists to discover failure patterns and prioritize future
-validation, not to estimate prevalence.
+## Engineering freeze during validation
 
-## Modes
+Do not change the engineering baseline during the first sessions even if small
+defects appear — except for a security problem or something that entirely
+prevents running the study. Patching after each participant would destroy a
+comparable reference. Record first; decide afterwards.
 
-- `DOM_ONLY` (default)
-- `DOM_PLUS_VISION` (experimental, operator-selected in validation tasks)
+## Final report (G1)
 
-The operator chooses the mode for a validation task. The system does not
-auto-route in P0.
+The important artifact is the **consolidated G1 report** with the evidence from
+the 3–4 people. It must decide explicitly between:
 
-## Success gate
-
-No single arbitrary percentage is a hard P0 success gate. P0 is
-qualitative/directional evidence.
+```text
+PROCEED_TO_P1
+ITERATE_P0
+STOP_OR_REFRAME
+```
 
 ## Data handling
 

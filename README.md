@@ -38,16 +38,19 @@ The system does **not** (in P0):
 ```text
 P0 prototype implementation: COMPLETE
 Source-release readiness: PASS
-Human product validation: PENDING
-P1 development: NOT STARTED
+OSS publication hygiene: PASS
+Human product validation: NEXT (G1)
+P1 development: BLOCKED (product evidence pending)
 ```
 
 This version is an experimental validation prototype. It is not intended for
 production or unattended use.
 
-The version identifier `0.0.1-p0` expresses that we are before a stable
+The version identifier `0.0.2-p0` expresses that we are before a stable
 release. Roadmap: see `docs/ROADMAP.md`. The next gate is **G1 — P0 Human
-Product Validation** (see `docs/VALIDATION-PLAN.md`).
+Product Validation** (see `docs/VALIDATION-PLAN.md`). During G1 the engineering
+baseline is frozen; the decisive artifact is the consolidated G1 report
+(`docs/validation/G1-REPORT-TEMPLATE.md`).
 
 ## Supported browsers
 
