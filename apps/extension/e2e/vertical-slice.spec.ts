@@ -2,6 +2,7 @@ import { test, expect, type Page, type Frame } from "@playwright/test";
 import { resolve, dirname } from "node:path";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { buildPageContext, MAX_TOTAL_CONTEXT_CHARACTERS, type FrameInput } from "@guided-web/accessible-dom";
 
 const API_URL = "http://localhost:8787";
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -47,14 +48,7 @@ async function capturePageContext(page: Page, fixturePath: string) {
   await page.waitForTimeout(200);
 
   const frames: Frame[] = page.frames();
-  const inputs: Array<{
-    frameId: number;
-    parentFrameId?: number;
-    origin: string;
-    accessible: boolean;
-    snapshot?: any;
-    unavailableReason?: string;
-  }> = [];
+  const inputs: FrameInput[] = [];
 
   let id = 0;
   for (const frame of frames) {
@@ -95,18 +89,10 @@ async function capturePageContext(page: Page, fixturePath: string) {
     }
   }
 
-  return {
-    schemaVersion: 1,
-    topFrameId: 0,
-    frames: inputs.map((i) => ({
-      frameId: i.frameId,
-      parentFrameId: i.parentFrameId,
-      origin: i.origin,
-      accessible: i.accessible,
-      snapshot: i.snapshot,
-      unavailableReason: i.unavailableReason,
-    })),
-  };
+  // Assemble through the real, chrome-free assembly path so frame priority
+  // (top > accessible > unavailable) and the global character budget are
+  // exercised in the browser E2E exactly as in production.
+  return buildPageContext(0, inputs);
 }
 
 function emptySession() {
@@ -178,6 +164,23 @@ test.describe("frame-aware + shadow + relevance extraction (browser)", () => {
     const names = ctx.frames.flatMap((f: any) => (f.snapshot?.elements ?? []).map((e: any) => e.accessibleName));
     expect(names.join(" ")).toContain("Guardar proyecto");
     expect(names.join(" ")).toContain("Activar notificaciones");
+  });
+
+  test("keeps the total multi-frame context bounded and retains accessible controls (Fix D/E)", async ({ page }) => {
+    const ctx = await capturePageContext(page, "frames-budget.html");
+    // The real assembly path bounds the whole serialized PageContext.
+    expect(JSON.stringify(ctx).length).toBeLessThanOrEqual(MAX_TOTAL_CONTEXT_CHARACTERS);
+    const top = ctx.frames[0];
+    expect(top.accessible).toBe(true);
+    const topNames = (top.snapshot?.elements ?? []).map((e: any) => e.accessibleName);
+    // The top frame retains its relevant interactive control despite heavy text.
+    expect(topNames.join(" ")).toContain("Confirmar pedido");
+    // Accessible child frame survives and is never merged into the top frame.
+    const child = ctx.frames.find((f: any) => f.frameId !== ctx.topFrameId && f.accessible);
+    expect(child).toBeDefined();
+    const childNames = (child.snapshot?.elements ?? []).map((e: any) => e.accessibleName);
+    expect(childNames.join(" ")).toContain("Pagar");
+    expect(topNames.join(" ")).not.toContain("Pagar");
   });
 });
 
@@ -258,31 +261,40 @@ test.describe("site access / permission UX (real side-panel bundle + stubbed chr
     await page.addInitScript(() => {
       const w = window as unknown as {
         chrome?: unknown;
-        __gwa?: { granted: boolean; assistCalls: number; permissionRequests: number; snapshotListener?: (m: unknown) => void };
+        __gwa?: { granted: boolean; assistCalls: number; permissionRequests: number; captureToken?: string; snapshotListener?: (m: unknown, s: unknown) => void };
       };
-      const state = { granted: false, assistCalls: 0, permissionRequests: 0 };
+      const state = { granted: false, assistCalls: 0, permissionRequests: 0, captureToken: undefined as string | undefined };
       w.__gwa = state;
       w.chrome = {
         tabs: { query: async () => [{ id: 1, url: "https://mail.google.com/mail" }] },
         scripting: {
-          executeScript: async () => {
+          executeScript: async (injection: any) => {
             if (!state.granted) {
               throw new Error(
                 "Cannot access contents of the page. Extension manifest must request permission to access the respective host.",
               );
             }
-            state.snapshotListener?.({
-              type: "GWA_SNAPSHOT",
-              snapshot: {
-                schemaVersion: 1,
-                snapshotId: "s",
-                page: { url: "https://mail.google.com/mail", origin: "https://mail.google.com", title: "Recibidos" },
-                elements: [
-                  { id: "el-0", tag: "button", role: "button", accessibleName: "Recibidos", interactive: true },
-                ],
-                visibleText: ["Recibidos"],
+            if (injection?.func) {
+              // The per-frame token setter: record the token to echo it back.
+              state.captureToken = injection.args?.[0];
+              return;
+            }
+            state.snapshotListener?.(
+              {
+                type: "GWA_SNAPSHOT",
+                snapshot: {
+                  schemaVersion: 1,
+                  snapshotId: "s",
+                  page: { url: "https://mail.google.com/mail", origin: "https://mail.google.com", title: "Recibidos" },
+                  elements: [
+                    { id: "el-0", tag: "button", role: "button", accessibleName: "Recibidos", interactive: true },
+                  ],
+                  visibleText: ["Recibidos"],
+                },
+                captureToken: state.captureToken,
               },
-            });
+              { tab: { id: 1 }, frameId: 0, origin: "https://mail.google.com", url: "https://mail.google.com/mail" },
+            );
           },
         },
         webNavigation: {
@@ -339,6 +351,88 @@ test.describe("site access / permission UX (real side-panel bundle + stubbed chr
     const state = await page.evaluate(() => (window as any).__gwa);
     expect(state.assistCalls).toBe(1);
     expect(state.permissionRequests).toBe(1);
+  });
+
+  test("preserves the EXACT original question across a site-permission grant (Fix B)", async ({ page }) => {
+    await page.addInitScript(() => {
+      const w = window as unknown as {
+        chrome?: unknown;
+        __gwa?: { granted: boolean; assistCalls: number; lastQuestion?: string; captureToken?: string; snapshotListener?: (m: unknown, s: unknown) => void };
+      };
+      const state = { granted: false, assistCalls: 0, lastQuestion: undefined as string | undefined, captureToken: undefined as string | undefined };
+      w.__gwa = state;
+      w.chrome = {
+        tabs: { query: async () => [{ id: 1, url: "https://mail.google.com/mail" }] },
+        scripting: {
+          executeScript: async (injection: any) => {
+            if (!state.granted) {
+              throw new Error("Cannot access contents of the page (host permission denied)");
+            }
+            if (injection?.func) {
+              state.captureToken = injection.args?.[0];
+              return;
+            }
+            state.snapshotListener?.(
+              {
+                type: "GWA_SNAPSHOT",
+                snapshot: {
+                  schemaVersion: 1,
+                  snapshotId: "s",
+                  page: { url: "https://mail.google.com/mail", origin: "https://mail.google.com", title: "Recibidos" },
+                  elements: [{ id: "el-0", tag: "button", role: "button", accessibleName: "Recibidos", interactive: true }],
+                  visibleText: ["Recibidos"],
+                },
+                captureToken: state.captureToken,
+              },
+              { tab: { id: 1 }, frameId: 0, origin: "https://mail.google.com", url: "https://mail.google.com/mail" },
+            );
+          },
+        },
+        webNavigation: {
+          getAllFrames: async () => [{ frameId: 0, parentFrameId: -1, url: "https://mail.google.com/mail" }],
+        },
+        runtime: {
+          onMessage: {
+            addListener: (cb: (m: unknown, s: unknown) => void) => {
+              state.snapshotListener = cb;
+            },
+            removeListener: () => {},
+          },
+          sendMessage: async (msg: any) => {
+            if (msg?.type === "GWA_ASSIST") {
+              state.assistCalls += 1;
+              state.lastQuestion = msg.question;
+            }
+            return { type: "GWA_ASSIST_RESULT", ok: true, decision: { kind: "explain", message: "Pulsa “Recibidos”." } };
+          },
+        },
+        permissions: {
+          contains: async () => state.granted,
+          request: async () => {
+            state.granted = true;
+            return true;
+          },
+        },
+        storage: { session: { get: async () => ({}), set: async () => {} } },
+      };
+    });
+
+    const sidePanelUrl = pathToFileURL(resolve(__dirname, "..", "dist", "sidepanel", "index.html")).href;
+    await page.goto(sidePanelUrl);
+    await page.fill("#question", "¿Dónde puedo cambiar mi contraseña?");
+    await page.click("#help-btn");
+    await expect(page.locator("#permission")).toBeVisible();
+    await expect(page.locator("#permission-text")).toContainText("mail.google.com");
+
+    await page.click("#permission-allow");
+    await expect(page.locator("#permission")).toBeHidden();
+    await expect(page.locator("#conversation")).toContainText("Pulsa “Recibidos”.");
+
+    const state = await page.evaluate(() => (window as any).__gwa);
+    expect(state.assistCalls).toBe(1);
+    // The EXACT original question reached the backend — NOT the default.
+    expect(state.lastQuestion).toBe("¿Dónde puedo cambiar mi contraseña?");
+    expect(state.lastQuestion).not.toBe("No sé qué hacer aquí.");
   });
 
   test("Resolves the page via webNavigation when tab.url is undefined (no unsupported page)", async ({ page }) => {

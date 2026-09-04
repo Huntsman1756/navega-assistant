@@ -71,6 +71,41 @@ with the exact repository, license, compatibility note and attribution.
 - **Not reused / not ported:** Python/CDP/Playwright/Puppeteer automation
   runtime, `backendDOMNodeId`, autonomous action execution, browser control.
 
+## Official Chrome references audited (pre-G1 runtime closure)
+
+These official references materially shaped the pre-G1 runtime-correctness
+closure. No code was imported from them; they were audited for exact MV3
+behaviour and are the source of the engineering decisions below.
+
+### chrome.scripting.executeScript
+- **Reference:** <https://developer.chrome.com/docs/extensions/reference/api/scripting>
+- **Key fact:** `executeScript` accepts `target.frameIds: number[]` (specific
+  frames) and `frameIds`/`allFrames` are mutually exclusive. The main frame id
+  is always `0`.
+- **How used:** we inject the extractor **separately per frame** with an explicit
+  `frameIds:[frameId]` instead of `allFrames:true`. A child iframe for which the
+  extension lacks permission can therefore never make the whole injection
+  fail; each frame is isolated with `Promise.allSettled`.
+
+### chrome.webNavigation
+- **Reference:** <https://developer.chrome.com/docs/extensions/reference/api/webNavigation>
+  (and `chrome.webNavigation.getAllFrames`/`getFrame`)
+- **Key fact:** `getAllFrames({tabId})` returns `{frameId, parentFrameId, url}`;
+  main frame has `parentFrameId === -1`.
+- **How used:** to enumerate the frame tree for per-frame injection and to
+  resolve the active top-frame URL when `tab.url` is unavailable (no `tabs`
+  permission). The `webNavigation` permission is retained because these runtime
+  paths require it; it may produce install/onboarding permission messaging.
+
+### chrome.permissions.addHostAccessRequest
+- **Reference:** <https://developer.chrome.com/docs/extensions/reference/api/permissions>
+- **Key fact:** `addHostAccessRequest` is **Chrome 133+** (MV3).
+- **Decision:** our `minimum_chrome_version` is **116**, so we did **not** adopt
+  it. The existing explicit per-origin `permissions.request` UX is preserved.
+  `addHostAccessRequest` is documented as a possible future simplification, not
+  a current dependency. We did not add `tabs`, permanent `<all_urls>`, or
+  `debugger`.
+
 ## Code provenance procedure
 
 Before copying code from any upstream repository:

@@ -26,7 +26,11 @@ self-hostable backend. Specifically, the snapshot:
 
 - contains roles, accessible names, interactive flags and element states;
 - **never** contains input values (password, OTP, card numbers, tokens);
-- excludes hidden inputs and script/style content.
+- excludes hidden inputs and script/style content;
+- redacts **high-confidence** secret-looking visible text (a strong
+  secret-context phrase immediately preceding a digit run, e.g.
+  “Tu código de verificación es 938271”). A date, price, postal/order number is
+  deliberately not redacted solely because it contains digits.
 
 The current help conversation is bounded (the most recent ~10 turns), never
 contains page snapshots, and is never used to build a browsing history or a
@@ -75,6 +79,10 @@ is **not** a browsing history.
   `{ "value": "user secret here" }`.
 - We detect and exclude password fields, OTP fields, card-number/CVV fields,
   authorization tokens and session identifiers.
+- **Guaranteed:** raw values of secret-bearing form fields are never serialized.
+- **Defence in depth:** secret-looking visible text is redacted only when
+  contextual classification is strong (a secret-context phrase precedes the
+  value). This is statistical, not a promise about arbitrary prose.
 - Conversation history can never bypass the sanitizer: page snapshots are never
   stored in a turn, and user-typed secret values are redacted at write time.
 - This is **data minimization and defence in depth**, not a promise of perfect
@@ -109,3 +117,7 @@ P0 validation data remains **local** unless the operator explicitly exports it.
 Validation templates live under `docs/validation/`; real participant data is
 git-ignored and never committed. Participants are referred to by aliases
 (`P01`, `P02`, …). Unnecessary personal data is not collected.
+
+For G1 (P01–P04), only fixtures, dedicated test accounts and dummy form data
+must be used. Participants must never use real passwords, OTP/verification
+codes, payment cards, recovery codes or banking data.

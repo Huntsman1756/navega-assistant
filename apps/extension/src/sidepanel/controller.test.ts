@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach } from "vitest";
-import { createController, type ControllerElements, type ChromeFacade } from "./controller";
+import { createController, DEFAULT_QUESTION, type ControllerElements, type ChromeFacade } from "./controller";
 import type { AccessibleDOMSnapshot, HelpSession, PageContext } from "@guided-web/protocol";
 import type { AssistResultMessage } from "../shared/messages";
 
@@ -292,5 +292,92 @@ describe("permission UX", () => {
     expect(calls.assist).toBe(0);
     expect(els.status.textContent).toContain("Navega no puede ayudar");
     expect(els.permission.hidden).toBe(true);
+  });
+
+  it("preserves the EXACT original question across a permission grant (Fix B)", async () => {
+    let throwCapture = true;
+    const { facade, calls, assistRequests } = makeFacade({
+      tab: { id: 1, url: "https://mail.google.com/mail" },
+      hasPermission: false,
+      requestPermission: true,
+    });
+    facade.capturePageContext = async () => {
+      calls.capture += 1;
+      if (throwCapture) {
+        throwCapture = false;
+        throw new Error("host permission denied");
+      }
+      return contextFor("https://mail.google.com/mail", "Recibidos");
+    };
+    const els = buildElements();
+    const c = createController(facade, els);
+    els.input.value = "¿Dónde puedo cambiar mi contraseña?";
+    await c.askHelp();
+    expect(els.permission.hidden).toBe(false);
+    // No backend request is made before the grant.
+    expect(calls.assist).toBe(0);
+
+    await c.allowOrigin();
+    expect(calls.assist).toBe(1);
+    // The EXACT original question reached the backend — NOT the default.
+    expect(assistRequests[0]?.question).toBe("¿Dónde puedo cambiar mi contraseña?");
+    expect(assistRequests[0]?.question).not.toBe(DEFAULT_QUESTION);
+    // A FRESH PageContext was captured after the grant (not a stale one).
+    expect(calls.capture).toBe(2);
+    // The original question appears exactly once, as a single user turn.
+    const userTurns = c.currentSession().turns.filter((t) => t.role === "user");
+    expect(userTurns).toHaveLength(1);
+    expect(userTurns[0]?.text).toBe("¿Dónde puedo cambiar mi contraseña?");
+    expect(conversationText(els)).toContain("¿Dónde puedo cambiar mi contraseña?");
+    expect(els.permission.hidden).toBe(true);
+  });
+
+  it("denying permission sends no model request and keeps the conversation intact (Fix B)", async () => {
+    const { facade, calls } = makeFacade({
+      tab: { id: 1, url: "https://mail.google.com/mail" },
+      captureError: new Error("host permission denied"),
+      hasPermission: false,
+      requestPermission: false,
+    });
+    const els = buildElements();
+    const c = createController(facade, els);
+    els.input.value = "¿Dónde puedo cambiar mi contraseña?";
+    await c.askHelp();
+    expect(els.permission.hidden).toBe(false);
+    await c.allowOrigin();
+    expect(calls.assist).toBe(0);
+    expect(c.currentSession().turns).toHaveLength(0);
+    expect(els.permission.hidden).toBe(true);
+  });
+
+  it("does NOT apply the old question to a different origin if the user navigated before granting (Fix B)", async () => {
+    let currentUrl = "https://mail.google.com/mail";
+    let throwCapture = true;
+    const { facade, calls } = makeFacade({
+      tab: { id: 1, url: currentUrl },
+      hasPermission: false,
+      requestPermission: true,
+    });
+    facade.getActiveTab = async () => ({ id: 1, url: currentUrl });
+    facade.capturePageContext = async () => {
+      if (throwCapture) {
+        throwCapture = false;
+        throw new Error("host permission denied");
+      }
+      return contextFor(currentUrl, "Page");
+    };
+    const els = buildElements();
+    const c = createController(facade, els);
+    els.input.value = "¿Dónde puedo cambiar mi contraseña?";
+    await c.askHelp();
+    expect(els.permission.hidden).toBe(false);
+
+    // User navigates to a different origin before granting.
+    currentUrl = "https://el-mundo.es/noticias";
+    await c.allowOrigin();
+    expect(calls.assist).toBe(0);
+    expect(els.status.textContent).toContain("Se abrió otra página");
+    // The intent is not stashed against the wrong origin.
+    expect(c.currentSession().turns).toHaveLength(0);
   });
 });

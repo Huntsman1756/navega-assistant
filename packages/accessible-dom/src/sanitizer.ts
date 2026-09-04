@@ -5,8 +5,9 @@
  * serialize input values. This module classifies sensitive fields and decides
  * which elements may be excluded entirely.
  *
- * This is defense in depth and data minimization, not a promise of perfect
- * privacy.
+ * This is a GUARANTEE for raw input values and a defence-in-depth (statistical,
+ * conservatively-gated) layer for secret-looking visible text. See
+ * `docs/SECURITY-INVARIANTS.md` P0-07 for the exact, auditable contract.
  */
 export type SecretFieldKind = "password" | "otp" | "card" | "none";
 
@@ -74,4 +75,38 @@ export function redactSensitiveRuns(text: string, kind: SecretFieldKind): string
     return text.replace(/\b\d{4,8}\b/g, "[redactado]");
   }
   return text;
+}
+
+/**
+ * High-confidence visible-text secret redaction (defence in depth).
+ *
+ * A secret may appear as ordinary page text rather than an input value, e.g.
+ * “Tu código de verificación es 938271”. This redacts the code ONLY when it is
+ * immediately preceded by a strong, unambiguous secret context phrase
+ * (verification code, OTP, recovery code, one-time code, etc.). It deliberately
+ * does NOT redact arbitrary 4–8 digit runs: a date, price, postal code, order
+ * number or article number must not disappear merely because it contains
+ * digits.
+ *
+ * Guaranteed protections (raw input values) live in `classifySecretField` /
+ * `shouldExcludeElement` / the never-serialize-a-value property of the
+ * snapshot schema. This function is a conservative SECOND layer.
+ */
+const SENSITIVE_CODE_CONTEXT =
+  /\b(?:verification code|verification number|código de verificación|número de verificación|one[- ]?time code|one[- ]?time password|código de un solo uso|otp|recovery code|código de recuperación|security code|código de seguridad|authentication code|código de autenticación|access code|código de acceso)\b/i;
+
+export function redactSensitiveVisibleText(text: string): string {
+  if (!text) return text;
+  let changed = false;
+  const out = text.replace(
+    new RegExp(
+      `(${SENSITIVE_CODE_CONTEXT.source})[^.!?\\n]{0,28}?\\b(\\d{4,8})\\b`,
+      "gi",
+    ),
+    (match, _phrase: string, code: string) => {
+      changed = true;
+      return match.replace(code, "[redactado]");
+    },
+  );
+  return changed ? out : text;
 }

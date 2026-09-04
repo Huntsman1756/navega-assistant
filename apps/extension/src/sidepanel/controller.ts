@@ -8,7 +8,7 @@
  */
 import type { AccessibleDOMSnapshot, HelpSession, HelpTurn, PageContext } from "@guided-web/protocol";
 import type { AssistResultMessage } from "../shared/messages";
-import { buildPageContext, type FrameInput } from "@guided-web/accessible-dom";
+import { capturePageContext } from "./capture";
 import {
   appendTurn,
   resetSession,
@@ -18,7 +18,21 @@ import { classifyPage, originMatchPattern, displayOrigin } from "../permissions/
 import { resolveActiveTab } from "./active-tab";
 
 export const DEFAULT_QUESTION = "No sé qué hacer aquí.";
-const SNAPSHOT_TIMEOUT_MS = 6000;
+
+/**
+ * Explicit pending help request. Holds the EXACT original question plus the
+ * minimal context needed to retry AFTER a site-permission grant. It NEVER
+ * stores a DOM snapshot (a fresh PageContext is always captured after grant),
+ * and it is discarded if the user navigates to a different origin before
+ * granting.
+ */
+export interface PendingHelpRequest {
+  question: string;
+  tabId: number;
+  url: string;
+  origin: string;
+  pattern: string;
+}
 
 export class PermissionRequiredError extends Error {
   constructor(readonly pattern: string, readonly origin: string) {
@@ -73,8 +87,8 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
   let session: HelpSession | null = null;
   /** The most recent question that has not yet been answered. */
   let pendingUserText: string | null = null;
-  /** Awaiting permission for a specific origin. */
-  let pendingPermission = { pattern: "", origin: "" };
+  /** Awaiting permission for a specific origin; the retry context. */
+  let pendingHelpRequest: PendingHelpRequest | null = null;
   let inFlight = false;
 
   async function ensureSession(): Promise<HelpSession> {
@@ -125,14 +139,16 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
   }
 
   function showPermission(origin: string): void {
-    pendingPermission = { pattern: originMatchPattern(origin), origin };
     els.permissionText.textContent = `Navega necesita permiso para ayudarte en ${displayOrigin(origin)}. Solo pedirá acceso a este sitio, no a todos.`;
     els.permission.hidden = false;
   }
 
   function hidePermission(): void {
-    pendingPermission = { pattern: "", origin: "" };
     els.permission.hidden = true;
+  }
+
+  function clearPending(): void {
+    pendingHelpRequest = null;
   }
 
   async function captureWithPermission(tabId: number, url: string): Promise<PageContext> {
@@ -152,17 +168,18 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
     }
   }
 
-  async function askHelp(): Promise<void> {
+  async function runHelp(question: string): Promise<void> {
     if (inFlight) return;
     inFlight = true;
     els.helpButton.disabled = true;
     els.newHelpButton.disabled = true;
     hidePermission();
+    clearPending();
 
-    const text = els.input.value.trim() || DEFAULT_QUESTION;
-    els.input.value = "";
-    pendingUserText = text;
+    pendingUserText = question;
     renderConversation();
+
+    let activeTab: { id: number; url: string } | null = null;
 
     try {
       const s = await ensureSession();
@@ -171,24 +188,23 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
         setStatus("No encontré la pestaña activa.");
         return;
       }
-      const url = tab.url ?? "";
+      activeTab = { id: tab.id, url: tab.url ?? "" };
       setStatus("Analizando esta página…");
-      const context = await captureWithPermission(tab.id, url);
+      const context = await captureWithPermission(activeTab.id, activeTab.url);
 
       const sWithOrigin = setCurrentOrigin(s, pageContextOrigin(context));
       session = sWithOrigin;
 
       setStatus("Preguntando al asistente…");
-      // The current question is NOT in history yet; it is the "current intent".
       const result = await facade.sendAssist({
         context,
-        question: text,
+        question,
         session: sWithOrigin,
       });
 
-      renderResult(result, text);
+      renderResult(result, question);
     } catch (err) {
-      handleError(err);
+      handleError(err, question, activeTab);
     } finally {
       inFlight = false;
       els.helpButton.disabled = false;
@@ -215,10 +231,25 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
     renderConversation();
   }
 
-  function handleError(err: unknown): void {
+  function handleError(
+    err: unknown,
+    question: string,
+    activeTab: { id: number; url: string } | null,
+  ): void {
     if (err instanceof PermissionRequiredError) {
       setStatus(`No puedo ver el contenido de esta página. ${displayOrigin(err.origin)} puede permitir el acceso.`);
       showPermission(err.origin);
+      if (activeTab) {
+        // Preserve the EXACT original user question so that a later grant
+        // re-runs the same intent instead of DEFAULT_QUESTION.
+        pendingHelpRequest = {
+          question,
+          tabId: activeTab.id,
+          url: activeTab.url,
+          origin: err.origin,
+          pattern: err.pattern,
+        };
+      }
       return;
     }
     if (err instanceof UnsupportedPageError) {
@@ -233,25 +264,48 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
   }
 
   async function allowOrigin(): Promise<void> {
-    if (!pendingPermission.pattern) return;
-    const ok = await facade.requestPermission(pendingPermission.pattern).catch(() => false);
-    if (ok) {
+    const pending = pendingHelpRequest;
+    if (!pending) return;
+    const ok = await facade.requestPermission(pending.pattern).catch(() => false);
+    if (!ok) {
+      // The user did not grant: expire the pending retry and show a clear
+      // status. Do NOT leave a reusable stale request behind.
       hidePermission();
-      setStatus("Permiso concedido. Inténtalo de nuevo.");
-      await askHelp();
-    } else {
+      clearPending();
       setStatus("Necesitas permitir el acceso para que Navega pueda ver esta página.");
+      return;
     }
+    // Re-resolve the active page after the grant. If the user navigated before
+    // granting, do NOT apply the old question to the wrong origin.
+    const tab = await facade.getActiveTab();
+    if (!tab?.id) {
+      clearPending();
+      setStatus("No encontré la pestaña activa.");
+      return;
+    }
+    const url = tab.url ?? "";
+    const origin = originOf(url);
+    if (tab.id !== pending.tabId || origin !== pending.origin) {
+      clearPending();
+      setStatus("Se abrió otra página mientras se pedía permiso. Pregunta de nuevo cuando estés en esa página.");
+      return;
+    }
+    hidePermission();
+    clearPending();
+    setStatus("Permiso concedido. Inténtalo de nuevo.");
+    await runHelp(pending.question);
   }
 
   function denyOrigin(): void {
     hidePermission();
+    clearPending();
     setStatus("No hay permiso para ver esta página. Puedes pedir ayuda en otra página.");
   }
 
   async function reset(): Promise<void> {
     hidePermission();
     pendingUserText = null;
+    clearPending();
     session = resetSession();
     els.input.value = "";
     setStatus("");
@@ -265,6 +319,13 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
       event.preventDefault();
       void askHelp();
     }
+  }
+
+  async function askHelp(): Promise<void> {
+    if (inFlight) return;
+    const text = els.input.value.trim() || DEFAULT_QUESTION;
+    els.input.value = "";
+    await runHelp(text);
   }
 
   function init(): void {
@@ -302,8 +363,6 @@ function originOf(url: string): string {
 
 /** Build a chrome-backed facade used by the real side panel entry. */
 export function createChromeFacade(cc: typeof chrome): ChromeFacade {
-  const SNAPSHOT_MESSAGE = "GWA_SNAPSHOT";
-
   return {
     getActiveTab: async () =>
       resolveActiveTab(
@@ -317,99 +376,49 @@ export function createChromeFacade(cc: typeof chrome): ChromeFacade {
         },
       ),
     capturePageContext: (tabId: number) =>
-      new Promise<PageContext>((resolve, reject) => {
-        let settled = false;
-        const collected = new Map<number, { frameId: number; origin: string; snapshot: AccessibleDOMSnapshot }>();
-        let knownFrames: Array<{ frameId: number; parentFrameId: number; url: string }> = [];
-
-        const close = () => {
-          clearTimeout(timeout);
-          cc.runtime.onMessage.removeListener(onMessage);
-        };
-
-        const finish = () => {
-          if (settled) return;
-          settled = true;
-          close();
-          const inputs: FrameInput[] = [];
-          if (knownFrames.length > 0) {
-            for (const f of knownFrames) {
-              const got = collected.get(f.frameId);
-              if (got) {
-                inputs.push({
-                  frameId: f.frameId,
-                  parentFrameId: f.parentFrameId,
-                  origin: got.origin,
-                  accessible: true,
-                  snapshot: got.snapshot,
-                });
-              } else {
-                // A frame we know about but could not read (e.g. cross-origin):
-                // represent it explicitly as unavailable, never as empty.
-                inputs.push({
-                  frameId: f.frameId,
-                  parentFrameId: f.parentFrameId,
-                  origin: originOf(f.url),
-                  accessible: false,
-                  unavailableReason: "cross_origin_unavailable",
-                });
-              }
-            }
-          } else {
-            for (const [frameId, got] of collected) {
-              inputs.push({ frameId, origin: got.origin, accessible: true, snapshot: got.snapshot });
-            }
-          }
-          if (inputs.length === 0) {
-            reject(new Error("no frame data captured"));
-            return;
-          }
-          const topFrameId = knownFrames.find((f) => f.parentFrameId === -1)?.frameId ?? 0;
-          // If the top-level frame itself cannot be read we cannot help at all:
-          // surface the permission/access error rather than pretending the page
-          // is empty. Inaccessible CHILD frames are tolerated and represented
-          // explicitly as unavailable.
-          const top = inputs.find((i) => i.frameId === topFrameId) ?? inputs[0];
-          if (!top?.accessible) {
-            reject(new Error("top frame unavailable"));
-            return;
-          }
-          resolve(buildPageContext(topFrameId, inputs));
-        };
-
-        const timeout = setTimeout(finish, SNAPSHOT_TIMEOUT_MS);
-
-        const onMessage = (message: unknown, sender: chrome.runtime.MessageSender) => {
-          const msg = message as { type?: string; snapshot?: AccessibleDOMSnapshot } | undefined;
-          if (msg?.type === SNAPSHOT_MESSAGE && msg.snapshot) {
-            const frameId = sender?.frameId ?? 0;
-            collected.set(frameId, {
-              frameId,
-              origin: sender?.origin ?? originOf(sender?.url ?? ""),
-              snapshot: msg.snapshot,
+      capturePageContext({
+        tabId,
+        enumerateFrames: async () => {
+          const frames = await cc.webNavigation.getAllFrames({ tabId });
+          return (frames ?? []).map((f) => ({
+            frameId: f.frameId,
+            parentFrameId: f.parentFrameId ?? -1,
+            url: f.url ?? "",
+          }));
+        },
+        setCaptureToken: async (frameId, token) => {
+          await cc.scripting.executeScript({
+            target: { tabId, frameIds: [frameId] },
+            func: (t: string) => {
+              (globalThis as { __GWA_CAPTURE_TOKEN__?: string }).__GWA_CAPTURE_TOKEN__ = t;
+            },
+            args: [token],
+          });
+        },
+        injectExtractor: async (frameId) => {
+          await cc.scripting.executeScript({
+            target: { tabId, frameIds: [frameId] },
+            files: ["content/extract.js"],
+          });
+        },
+        onMessage: (listener) => {
+          const handler = (message: unknown, sender: chrome.runtime.MessageSender) => {
+            const msg = message as
+              | { type?: string; snapshot?: AccessibleDOMSnapshot; captureToken?: string }
+              | undefined;
+            listener({
+              type: msg?.type,
+              snapshot: msg?.snapshot,
+              captureToken: msg?.captureToken,
+              senderTabId: sender?.tab?.id,
+              senderFrameId: sender?.frameId,
+              senderOrigin: sender?.origin,
+              senderUrl: sender?.url,
             });
-          }
-        };
-        cc.runtime.onMessage.addListener(onMessage);
-
-        void (async () => {
-          // Enumerate the frame tree (best effort; not all contexts report).
-          if (cc.webNavigation?.getAllFrames) {
-            try {
-              knownFrames = (await cc.webNavigation.getAllFrames({ tabId })) ?? [];
-            } catch {
-              knownFrames = [];
-            }
-          }
-          try {
-            // Inject the extractor into every context the extension can reach.
-            await cc.scripting.executeScript({ target: { tabId, allFrames: true }, files: ["content/extract.js"] });
-          } catch {
-            // Some frames may be unreachable; we still assemble below.
-          }
-          // Give frame messages a moment to arrive before assembling.
-          setTimeout(finish, 250);
-        })();
+          };
+          cc.runtime.onMessage.addListener(handler);
+          return () => cc.runtime.onMessage.removeListener(handler);
+        },
       }),
     sendAssist: (req) =>
       cc.runtime.sendMessage({ type: "GWA_ASSIST", ...req }) as Promise<AssistResultMessage>,

@@ -43,7 +43,7 @@ The system does **not** (in P0):
 P0 prototype implementation: COMPLETE
 Source-release readiness: PASS
 OSS publication hygiene: PASS
-Pre-G1 validation baseline: FROZEN (v0.0.6-p0-g1-baseline)
+Pre-G1 validation baseline: FROZEN (v0.0.7-p0-g1-baseline)
 Human product validation: READY TO START (G1)
 P1 development: BLOCKED (product evidence pending)
 ```
@@ -51,15 +51,19 @@ P1 development: BLOCKED (product evidence pending)
 This version is an experimental validation prototype. It is not intended for
 production or unattended use.
 
-The version identifier `0.0.5-p0-g1-baseline` marks the exact implementation
-that is used in human validation. It adds a small, ephemeral current-help-session
-conversation, a per-origin permission UX and a hardened DOM-extraction layer
-(standards-based accessible semantics, open Shadow DOM traversal, frame-aware
-extraction and deterministic relevance/context budgeting); it does **not** add
-highlighting, autonomous actions or browsing history. Roadmap: see `docs/ROADMAP.md`. The next
-gate is **G1 — P0 Human Product Validation** (see `docs/VALIDATION-PLAN.md`).
-During G1 the engineering baseline is frozen; the decisive artifact is the
-consolidated G1 report (`docs/validation/G1-REPORT-TEMPLATE.md`).
+The version identifier `0.0.7-p0-g1-baseline` marks the exact implementation
+that is used in human validation. It hardens the runtime so one inaccessible
+child frame can never fail capture of the top page (per-frame isolated
+injection with `frameIds`, never `allFrames:true`), preserves the exact user
+question across a site-permission grant, correlates frame snapshots to the
+captured tab, prioritises accessible frames and bounds the whole serialized
+context (including visible text) with a deterministic global budget. It keeps
+the small, ephemeral current-help-session conversation and per-origin
+permission UX; it does **not** add highlighting, autonomous actions or browsing
+history. Roadmap: see `docs/ROADMAP.md`. The next gate is **G1 — P0 Human
+Product Validation** (see `docs/VALIDATION-PLAN.md`). During G1 the engineering
+baseline is frozen; the decisive artifact is the consolidated G1 report
+(`docs/validation/G1-REPORT-TEMPLATE.md`).
 
 ## Supported browsers
 
@@ -140,7 +144,8 @@ backend configuration.
   It lives in the Side Panel plus `chrome.storage.session` (cleared on restart),
   never `chrome.storage.local`.
 - Input values (password, OTP, card numbers, tokens) are never serialized, and
-  user-typed secrets are redacted before being stored in the conversation.
+  high-confidence secret-looking visible text is redacted; user-typed secrets are
+  redacted before being stored in the conversation.
 - The **Nueva ayuda** button clears the current help session.
 - No telemetry, analytics SDK or crash reporting by default.
 - P0 validation data stays local unless explicitly exported. See
@@ -149,13 +154,20 @@ backend configuration.
 ## Security model
 
 - Least-privilege manifest: `activeTab`, `scripting`, `storage`, `sidePanel`,
-  plus host access only to `http://localhost/*` and `http://127.0.0.1/*` (the
-  self-hosted backend and local fixture pages). No `debugger`, no permanent
-  `<all_urls>`. A broad host capability is declared **optionally** only, never
-  granted by default; the user grants individual sites explicitly.
+  `webNavigation` (needed to enumerate frames and resolve the top-frame URL
+  without the `tabs` permission), plus host access only to `http://localhost/*`
+  and `http://127.0.0.1/*` (the self-hosted backend and local fixture pages). No
+  `debugger`, no permanent `<all_urls>`. A broad host capability is declared
+  **optionally** only, never granted by default; the user grants individual
+  sites explicitly.
+- Frame capture is **per-frame isolated**: the extension enumerates frames and
+  injects each separately with explicit `frameIds` (never `allFrames:true`), so
+  one inaccessible advertising/tracking child frame can never prevent capture of
+  the top page or other accessible frames. Unavailable frames are reported
+  explicitly (never as empty).
 - Page content is treated as untrusted input, and page/session text can never
   inject conversation roles or override system policy.
-- Strict, versioned schemas (`additionalProperties: false`, `PROTOCOL_VERSION 2`).
+- Strict, versioned schemas (`additionalProperties: false`, `PROTOCOL_VERSION 3`).
 - Structured output is not a complete safety boundary; an instruction-safety
   layer blocks/replaces requests for secrets.
 - No `click`/`type`/`submit`/`executeJavaScript` primitives exist.

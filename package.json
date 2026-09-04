@@ -1,6 +1,6 @@
 {
   "name": "guided-web-assistant",
-  "version": "0.0.6-p0-g1-baseline",
+  "version": "0.0.7-p0-g1-baseline",
   "private": true,
   "description": "A guided-navigation assistant that helps low-digital-confidence users understand and use web interfaces. The human remains the executor.",
   "license": "Apache-2.0",

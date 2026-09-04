@@ -20,7 +20,7 @@
  */
 import type { AccessibleDOMSnapshot, AccessibleElement, ElementState } from "@guided-web/protocol";
 import { computeAccessibleName, getRole, isDisabled, isInaccessible } from "dom-accessibility-api";
-import { classifySecretField, shouldExcludeElement, redactSensitiveRuns } from "./sanitizer";
+import { classifySecretField, shouldExcludeElement, redactSensitiveRuns, redactSensitiveVisibleText } from "./sanitizer";
 import { iterElements } from "./traversal";
 import {
   orderCandidates,
@@ -253,7 +253,7 @@ function collectVisibleText(root: Document | ShadowRoot, maxVisibleText: number)
     if (shouldExcludeElement(el)) continue;
     if (isInaccessible(el)) continue;
     if (!VISIBLE_TEXT_SELECTORS.has(el.tagName.toLowerCase())) continue;
-    const text = (el.textContent || "").trim();
+    const text = redactSensitiveVisibleText((el.textContent || "").trim());
     if (!text || text.length > 300) continue;
     if (seen.has(text)) continue;
     seen.add(text);

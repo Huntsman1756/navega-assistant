@@ -1,6 +1,6 @@
 {
   "name": "@guided-web/security-policy",
-  "version": "0.0.6-p0-g1-baseline",
+  "version": "0.0.7-p0-g1-baseline",
   "private": true,
   "type": "module",
   "main": "src/index.ts",

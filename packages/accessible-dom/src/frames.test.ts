@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from "vitest";
-import { buildPageContext, boundContext, MAX_FRAMES } from "./frames";
+import { buildPageContext, boundContext, MAX_FRAMES, MAX_TOTAL_CONTEXT_CHARACTERS } from "./frames";
 import type { AccessibleDOMSnapshot } from "@guided-web/protocol";
 
 function mkSnapshot(id: string, els: number): AccessibleDOMSnapshot {
@@ -118,5 +118,96 @@ describe("boundContext", () => {
     const a = boundContext(ctx, 20, 2000).frames[0]?.snapshot;
     const b = boundContext(ctx, 20, 2000).frames[0]?.snapshot;
     expect(a).toEqual(b);
+  });
+});
+
+describe("frame priority (Fix D)", () => {
+  it("keeps a later accessible child frame ahead of unavailable frames before the frame budget", () => {
+    // frame 0 accessible; frames 1..7 unavailable; frame 8 accessible "useful".
+    const inputs = [
+      { frameId: 0, parentFrameId: -1, accessible: true, snapshot: mkSnapshot("top", 1) },
+      ...Array.from({ length: 7 }, (_, i) => ({
+        frameId: i + 1,
+        parentFrameId: 0,
+        accessible: false,
+        unavailableReason: "cross_origin_unavailable",
+      })),
+      { frameId: 8, parentFrameId: 0, accessible: true, snapshot: mkSnapshot("useful", 1) },
+    ];
+    const ctx = buildPageContext(0, inputs);
+    expect(ctx.frames.length).toBeLessThanOrEqual(MAX_FRAMES);
+    const ids = ctx.frames.map((f) => f.frameId);
+    expect(ids[0]).toBe(0);
+    // The useful accessible frame (8) survives before the first unavailable one.
+    expect(ids).toContain(8);
+    const usefulIdx = ids.indexOf(8);
+    const firstUnavailable = ctx.frames.findIndex((f) => !f.accessible);
+    expect(firstUnavailable).toBeGreaterThan(-1);
+    expect(usefulIdx).toBeLessThan(firstUnavailable);
+  });
+
+  it("keeps unavailable metadata when the frame budget allows", () => {
+    const ctx = buildPageContext(0, [
+      { frameId: 0, parentFrameId: -1, accessible: true, snapshot: mkSnapshot("top", 1) },
+      { frameId: 2, parentFrameId: 0, accessible: false, unavailableReason: "cross_origin_unavailable" },
+      { frameId: 1, parentFrameId: 0, accessible: true, snapshot: mkSnapshot("child", 1) },
+    ]);
+    const ids = ctx.frames.map((f) => f.frameId);
+    // Order: top, accessible child (1), unavailable child (2).
+    expect(ids).toEqual([0, 1, 2]);
+    expect(ctx.frames[2]?.accessible).toBe(false);
+    expect(ctx.frames[2]?.unavailableReason).toBe("cross_origin_unavailable");
+  });
+});
+
+describe("global budget with visibleText (Fix E)", () => {
+  function bigSnapshot(id: string, els: number): AccessibleDOMSnapshot {
+    const s = mkSnapshot(id, els);
+    s.visibleText = Array.from({ length: 60 }, (_, i) => `Noticia detallada número ${i} — ${"contenido ".repeat(12)}`);
+    return s;
+  }
+
+  it("counts visibleText toward the total serialized budget and trims it", () => {
+    const top = bigSnapshot("top", 2);
+    const child = mkSnapshot("child", 1);
+    child.visibleText = ["a".repeat(60000)];
+    const ctx = buildPageContext(0, [
+      { frameId: 0, parentFrameId: -1, accessible: true, snapshot: top },
+      { frameId: 1, parentFrameId: 0, accessible: true, snapshot: child },
+    ]);
+    const serialized = JSON.stringify(ctx);
+    expect(serialized.length).toBeLessThanOrEqual(MAX_TOTAL_CONTEXT_CHARACTERS);
+    // The huge child visible text is trimmed away entirely.
+    const childFrame = ctx.frames.find((f) => f.frameId === 1)!;
+    const huge = childFrame.snapshot?.visibleText?.some((t) => t.includes("aaaa")) ?? false;
+    expect(huge).toBe(false);
+    // The top frame's interactive controls survive.
+    expect(ctx.frames[0]?.snapshot?.elements.length).toBe(2);
+    // Deterministic: identical input produces identical output.
+    const again = buildPageContext(0, [
+      { frameId: 0, parentFrameId: -1, accessible: true, snapshot: bigSnapshot("top", 2) },
+      { frameId: 1, parentFrameId: 0, accessible: true, snapshot: (() => { const s = mkSnapshot("child", 1); s.visibleText = ["a".repeat(60000)]; return s; })() },
+    ]);
+    expect(JSON.stringify(ctx)).toEqual(JSON.stringify(again));
+  });
+
+  it("keeps interactive controls before large article/notice text", () => {
+    const top = mkSnapshot("top", 1);
+    top.visibleText = Array.from({ length: 120 }, (_, i) => `Párrafo ${i} ` + "palabra ".repeat(40));
+    const ctx = buildPageContext(0, [{ frameId: 0, parentFrameId: -1, accessible: true, snapshot: top }]);
+    expect(ctx.frames[0]?.snapshot?.elements.length).toBeGreaterThanOrEqual(1);
+    const vt = ctx.frames[0]?.snapshot?.visibleText ?? [];
+    expect(vt.join(" ").length).toBeLessThan(MAX_TOTAL_CONTEXT_CHARACTERS);
+  });
+
+  it("keeps the total multi-frame serialized PageContext below the configured maximum", () => {
+    const frames = Array.from({ length: MAX_FRAMES }, (_, i) => ({
+      frameId: i,
+      parentFrameId: i === 0 ? -1 : 0,
+      accessible: true,
+      snapshot: bigSnapshot(`f${i}`, 25),
+    }));
+    const ctx = buildPageContext(0, frames);
+    expect(JSON.stringify(ctx).length).toBeLessThanOrEqual(MAX_TOTAL_CONTEXT_CHARACTERS);
   });
 });

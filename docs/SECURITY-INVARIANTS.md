@@ -14,7 +14,7 @@ phase in which it is fully implemented.
 | P0-04 | An ambiguous target must never be silently selected. | P1 |
 | P0-05 | All webpage content is untrusted input. | P0 |
 | P0-06 | Webpage content can never modify system policy. | P0 |
-| P0-07 | Passwords, OTPs, payment-card secrets, recovery codes, authentication tokens and equivalent secrets must never leave the browser. | P0 |
+| P0-07 | Raw values of secret-bearing fields (password, OTP, payment-card number/CVV, recovery code, authentication token, hidden secret inputs) must never leave the browser. High-confidence secret-looking visible text is redacted as defence in depth. | P0 |
 | P0-08 | A MutationObserver must never directly trigger an LLM request. | P1/P2 |
 | P0-09 | Future actionable responses must belong to an explicit snapshot. | P1/P2 |
 | P0-10 | A stale response must not be applied blindly. | P1/P2 |
@@ -42,7 +42,20 @@ phase in which it is fully implemented.
   system prompt that labels it untrusted. The codebase never parses page text
   as instructions.
 - **P0-07:** The extractor never serializes input values. Secret fields
-  (password/OTP/card) are represented by role + label + state only.
+  (password/OTP/card) are represented by role + label + state only. Hidden
+  inputs are excluded entirely. A secret that appears as ordinary **visible
+  text** (e.g. “Tu código de verificación es 938271”) is redacted when it is
+  preceded by a strong secret-context phrase. A date, price, postal/cardholder
+  number or order number is deliberately **not** redacted merely because it
+  contains digits.
+  - **GUARANTEED:** raw password input values are never serialized;
+  - **GUARANTEED:** raw OTP/payment-card/CVV input values are never serialized;
+  - **GUARANTEED:** hidden secret inputs are excluded;
+  - **GUARANTEED:** provider API keys exist only in backend configuration;
+  - **HIGH-CONFIDENCE / DEFENCE-IN-DEPTH:** sensitive visible textual runs are
+    redacted only when contextual classification is strong (a secret-context
+    phrase immediately precedes a digit run). This is statistical, never a
+    promise about arbitrary prose.
 - **P0-11:** There is no `click`, `type`, `submit`, `purchase`, `delete`,
   `send`, `executeJavaScript`, or arbitrary-remote-control primitive anywhere
   in the runtime code. Playwright exists only as a test tool.
@@ -74,6 +87,9 @@ phase in which it is fully implemented.
 
 - Instruction safety is keyword-pattern based. It is defence in depth, not a
   complete solution to semantic prompt injection.
+- Visible-text secret redaction is contextual/keyword-based (defence in depth),
+  not an exhaustive DLP. The hard guarantee is that raw secret form-field values
+  are never serialized.
 - No server-side quotas or advanced rate limiting yet (P0-13 is P2).
 - No screenshot redaction / vision policy yet (P0-18 is P2).
 - No target identity/resolution or stale-response guarding yet (P0-03/04/09/10

@@ -4,6 +4,90 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.0.7-p0-g1-baseline] - 2026-09-04
+
+### Status
+- New pre-G1 validation baseline. **This** is the exact artifact used in human
+  validation. It is a runtime-correctness closure against official Chrome
+  extension APIs and mature upstream OSS; it fixes plumbing issues that would
+  otherwise surface as false G1 failures. The previous `v0.0.6-p0-g1-baseline`
+  baseline remains immutable. No product features were added.
+
+### Fixed
+- **A — Per-frame isolated injection.** Replaced the fragile
+  `chrome.scripting.executeScript({target:{tabId, allFrames:true}})` capture
+  with explicit per-frame injection:
+  - enumerate frames via `chrome.webNavigation.getAllFrames({tabId})`;
+  - inject **separately per frame** with `target:{tabId, frameIds:[frameId]}`;
+  - each frame is isolated with `Promise.allSettled`, so one failed child frame
+    can NEVER fail the top page or another accessible frame;
+  - a frame that produced no snapshot is represented explicitly as unavailable
+    (never empty);
+  - the top frame is attempted independently; if IT cannot be accessed the
+    capture surfaces a page-level access error that triggers the per-origin
+    permission UX.
+- **B — Preserve the exact question across the permission flow.** The old retry
+  called `askHelp()` again after the textarea had been cleared, so the original
+  intent was replaced by `DEFAULT_QUESTION`. Now an explicit
+  `PendingHelpRequest` stores the exact question + minimal tab/origin context; a
+  grant re-runs the EXACT question and captures a FRESH `PageContext`. No stale
+  snapshot, no duplicate user turns, no default fallback. Denial sends no model
+  request and expires the pending operation. If the user navigates to a
+  different origin before granting, the old question is NOT applied to the wrong
+  origin.
+- **C — Correlate frame messages with the captured tab.** The snapshot listener
+  now rejects any message whose `sender.tab.id` does not match the captured
+  `tabId`, and each capture uses a short-lived token echoed back by the content
+  script, so a late/stale message from a previous capture, another window or an
+  unrelated extension message can never populate the current `PageContext`.
+- **D — Frame prioritisation before `MAX_FRAMES`.** Deterministic frame ordering
+  is now TOP frame, then ACCESSIBLE child frames, then UNAVAILABLE child frames
+  (stable within each class), applied before `MAX_FRAMES`, so an inaccessible
+  advertising iframe can no longer crowd out a useful accessible child frame.
+- **E — Real global page-context budget.** `boundContext` now accounts for frame
+  metadata, elements, accessible names, roles/tags/states, the snapshot envelope,
+  page/title/origin/URL **and visibleText**, with ELEMENTS (controls) taking
+  priority over LOW-priority visible text. The whole serialized `PageContext`
+  stays deterministically bounded (`MAX_TOTAL_CONTEXT_CHARACTERS`), top frame
+  gets priority, and child frames consume the remaining budget.
+- **F — Secret-safety contract vs visible text.** A secret can appear as plain
+  page text (e.g. “Tu código de verificación es 938271”), not only as an input
+  value. Added conservative, phrase-gated visible-text redaction
+  (`redactSensitiveVisibleText`): a digit run is redacted only when immediately
+  preceded by a strong secret-context phrase. A date, price, postal/order number
+  is NOT redacted solely by digit length. Security docs now distinguish
+  GUARANTEED (raw secret field values never serialized) from HIGH-CONFIDENCE
+  / defence-in-depth (contextual visible-text redaction).
+
+### Tests
+- New frame-isolated capture unit suite (`capture.test.ts`): top+A+B+C scenario
+  (B unreachable) => A/C still captured, B unavailable; top-inaccessible =>
+  page-level failure; independent per-frame attempts; same-tab accepted, other
+  tab ignored, malformed snapshot ignored, stale-token message cannot populate a
+  new capture.
+- New frame-priority + global-budget tests (`frames.test.ts`): accessible frame
+  survives ahead of unavailable frames before `MAX_FRAMES`; unavailable metadata
+  retained when budget allows; visibleText counts toward the serialized budget;
+  large article text cannot crowd out controls; deterministic; multi-frame
+  payload bounded.
+- New permission-retry tests (`controller.test.ts`): exact question preserved
+  through a grant; fresh PageContext after grant; no duplicate user turns;
+  denial sends no model request; navigating to a different origin before grant
+  is not applied to the wrong origin.
+- New secret-text tests (`extractor.test.ts`/`sanitizer.ts`): verification-code
+  visible text redacted; a date not redacted; an order number not treated as an
+  OTP solely by digit length.
+- Browser E2E extended: real bundle assembled through `buildPageContext`;
+  multi-frame context bounded + accessible controls retained; the EXACT original
+  question survives a site-permission grant. Existing active-tab URL and
+  help-session follow-up E2E remain green.
+
+### Security / privacy
+- No `tabs` permission. No permanent `<all_urls>`. No `debugger`/CDP. No
+  autonomous actions, highlighting, telemetry or browsing history added.
+- `permissions.addHostAccessRequest` (Chrome 133+) was audited but NOT adopted
+  (minimum Chrome is 116); the explicit per-origin permission UX is preserved.
+
 ## [0.0.6-p0-g1-baseline] - 2026-09-04
 
 ### Status

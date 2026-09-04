@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, afterEach } from "vitest";
 import { extractAccessibleDOMSnapshot } from "./extractor";
-import { classifySecretField, shouldExcludeElement, isHidden, redactSensitiveRuns } from "./sanitizer";
+import { classifySecretField, shouldExcludeElement, isHidden, redactSensitiveRuns, redactSensitiveVisibleText } from "./sanitizer";
 import type { AccessibleDOMSnapshot } from "@guided-web/protocol";
 
 function setHtml(html: string): void {
@@ -158,6 +158,36 @@ describe("sanitizer interaction (no secret leakage)", () => {
     expect(redactSensitiveRuns("Card 4111 1111 1111 1111", "card")).not.toMatch(/4111/);
     expect(redactSensitiveRuns("OTP 483920", "otp")).not.toContain("483920");
     expect(redactSensitiveRuns("Email address", "none")).toBe("Email address");
+  });
+});
+
+describe("secret-safety contract vs visible text (Fix F)", () => {
+  it("redacts a verification code that appears as ordinary visible text", () => {
+    const s = snap("<p>Tu código de verificación es 938271</p>");
+    const vt = s.visibleText ?? [];
+    expect(vt.join(" ")).not.toContain("938271");
+    expect(vt.join(" ")).toContain("[redactado]");
+  });
+
+  it("does NOT redact a date", () => {
+    const s = snap("<p>Publicado el 04/09/2026</p>");
+    expect(s.visibleText).toContain("Publicado el 04/09/2026");
+  });
+
+  it("does NOT treat an order number as a secret solely by digit length", () => {
+    const s = snap("<p>Pedido 938271</p>");
+    expect(s.visibleText).toContain("Pedido 938271");
+    expect(JSON.stringify(s)).toContain("Pedido 938271");
+  });
+
+  it("redactSensitiveVisibleText is defensive and phrase-gated", () => {
+    // strong phrase -> code redacted
+    expect(redactSensitiveVisibleText("Tu código de recuperación es 482913")).not.toContain("482913");
+    // no phrase -> unchanged
+    expect(redactSensitiveVisibleText("Pedido 938271")).toBe("Pedido 938271");
+    expect(redactSensitiveVisibleText("Publicado el 04/09/2026")).toBe("Publicado el 04/09/2026");
+    // english phrase
+    expect(redactSensitiveVisibleText("Your verification code is 823940")).not.toContain("823940");
   });
 });
 
