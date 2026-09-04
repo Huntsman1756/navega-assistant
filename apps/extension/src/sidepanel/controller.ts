@@ -15,6 +15,7 @@ import {
   setCurrentOrigin,
 } from "../session/session";
 import { classifyPage, originMatchPattern, displayOrigin } from "../permissions/permissions";
+import { resolveActiveTab } from "./active-tab";
 
 export const DEFAULT_QUESTION = "No sé qué hacer aquí.";
 const SNAPSHOT_TIMEOUT_MS = 6000;
@@ -304,10 +305,17 @@ export function createChromeFacade(cc: typeof chrome): ChromeFacade {
   const SNAPSHOT_MESSAGE = "GWA_SNAPSHOT";
 
   return {
-    getActiveTab: async () => {
-      const [tab] = await cc.tabs.query({ active: true, currentWindow: true });
-      return tab ? { id: tab.id, url: tab.url } : null;
-    },
+    getActiveTab: async () =>
+      resolveActiveTab(
+        async () => {
+          const [tab] = await cc.tabs.query({ active: true, currentWindow: true });
+          return tab ? { id: tab.id, url: tab.url } : null;
+        },
+        async (tabId) => {
+          const frame = await cc.webNavigation.getFrame({ tabId, frameId: 0 });
+          return frame?.url;
+        },
+      ),
     capturePageContext: (tabId: number) =>
       new Promise<PageContext>((resolve, reject) => {
         let settled = false;

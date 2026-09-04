@@ -4,6 +4,35 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.0.6-p0-g1-baseline] - 2026-09-04
+
+### Status
+- New pre-G1 validation baseline. **This** is the exact artifact used in human
+  validation. It fixes a **total-study blocker** found in the live Chrome smoke
+  test of `v0.0.5-p0-g1-baseline`. The previous `v0.0.5-p0-g1-baseline` baseline
+  remains immutable.
+
+### Fixed
+- **Active-page URL discovery (no `tabs` permission)**: the Side Panel used
+  `chrome.tabs.query(...)` and relied on `Tab.url`, but without the `tabs`
+  permission `Tab.url` is `undefined` unless an `activeTab` grant is valid
+  (e.g. the user clicked the action icon). Opening the Side Panel alone (or
+  switching tabs while it is open) therefore left `tab.url` empty and a normal
+  HTTPS page (e.g. GitHub.com) was mis-classified as `unsupported`.
+- Resolution: when `tab.url` is absent, the extension reads the top-level frame
+  URL via `chrome.webNavigation.getFrame({ tabId, frameId: 0 })` (only needs the
+  already-declared `webNavigation` permission). An ordinary HTTPS page is then
+  classified `supported` and falls into the explicit per-origin permission
+  flow. No `tabs` permission, no permanent `<all_urls>`, no `debugger`.
+
+### Tests
+- New pure `resolveActiveTab` regression (chrome-free unit): `tab.url` present
+  vs. `undefined` (getFrame fallback), degrade-to-`unsupported` on failure, and
+  `classifyPage("https://…") === "supported"`.
+- New browser E2E: when `Tab.url` is undefined, Navega resolves the page via
+  `webNavigation` and does **not** report an unsupported page, but instead shows
+  the per-origin permission prompt.
+
 ## [0.0.5-p0-g1-baseline] - 2026-09-04
 
 ### Status

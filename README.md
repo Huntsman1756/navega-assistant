@@ -43,7 +43,7 @@ The system does **not** (in P0):
 P0 prototype implementation: COMPLETE
 Source-release readiness: PASS
 OSS publication hygiene: PASS
-Pre-G1 validation baseline: FROZEN (v0.0.5-p0-g1-baseline)
+Pre-G1 validation baseline: FROZEN (v0.0.6-p0-g1-baseline)
 Human product validation: READY TO START (G1)
 P1 development: BLOCKED (product evidence pending)
 ```

@@ -340,4 +340,58 @@ test.describe("site access / permission UX (real side-panel bundle + stubbed chr
     expect(state.assistCalls).toBe(1);
     expect(state.permissionRequests).toBe(1);
   });
+
+  test("Resolves the page via webNavigation when tab.url is undefined (no unsupported page)", async ({ page }) => {
+    await page.addInitScript(() => {
+      const w = window as unknown as {
+        chrome?: unknown;
+        __gwa?: { snapshotListener?: (m: unknown) => void };
+      };
+      const state = { snapshotListener: undefined };
+      w.__gwa = state;
+      w.chrome = {
+        tabs: { query: async () => [{ id: 1, url: undefined }] },
+        webNavigation: {
+          getFrame: async () => ({ frameId: 0, url: "https://mail.google.com/mail" }),
+          getAllFrames: async () => [{ frameId: 0, parentFrameId: -1, url: "https://mail.google.com/mail" }],
+        },
+        scripting: {
+          executeScript: async () => {
+            throw new Error("host permission denied");
+          },
+        },
+        runtime: {
+          onMessage: {
+            addListener: (cb: (m: unknown) => void) => {
+              state.snapshotListener = cb;
+            },
+            removeListener: () => {},
+          },
+          sendMessage: async () => ({
+            type: "GWA_ASSIST_RESULT",
+            ok: true,
+            decision: { kind: "explain", message: "ok" },
+          }),
+        },
+        permissions: {
+          contains: async () => false,
+          request: async () => true,
+        },
+        storage: { session: { get: async () => ({}), set: async () => {} } },
+      };
+    });
+
+    const sidePanelUrl = pathToFileURL(resolve(__dirname, "..", "dist", "sidepanel", "index.html")).href;
+    await page.goto(sidePanelUrl);
+    await page.fill("#question", "¿Qué hago ahora?");
+    await page.click("#help-btn");
+
+    // The URL was resolved via webNavigation, so GitHub.com/normal HTTPS is
+    // NOT reported as an unsupported page; it falls into the per-origin
+    // permission flow instead.
+    await expect(page.locator("#permission")).toBeVisible();
+    await expect(page.locator("#permission-text")).toContainText("mail.google.com");
+    await expect(page.locator("#status")).not.toContainText("solo puede ayudar");
+    await expect(page.locator("#status")).not.toContainText("tipo de página");
+  });
 });

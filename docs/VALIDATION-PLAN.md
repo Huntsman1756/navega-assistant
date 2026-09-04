@@ -8,7 +8,7 @@ The next open gate is **G1**:
 G1 — P0 HUMAN PRODUCT VALIDATION
 ```
 
-> **G1 artifact:** the G1 artifact is `v0.0.5-p0-g1-baseline`. It adds a
+> **G1 artifact:** the G1 artifact is `v0.0.6-p0-g1-baseline`. It adds a
 > small, **ephemeral current help session** (a bounded conversation so the
 > assistant can answer short follow-ups such as “ya estoy” / “¿y ahora?”) and a
 > **per-origin permission UX** for sites `activeTab` cannot reach. It does **not**
