@@ -1,6 +1,6 @@
 {
   "name": "@guided-web/protocol",
-  "version": "0.0.1-p0",
+  "version": "0.0.2-p0",
   "private": true,
   "type": "module",
   "main": "src/index.ts",

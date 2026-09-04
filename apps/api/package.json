@@ -1,6 +1,6 @@
 {
   "name": "@guided-web/api",
-  "version": "0.0.1-p0",
+  "version": "0.0.2-p0",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
@@ -23,7 +23,7 @@
     "typescript": "^5.5.4",
     "vitest": "^3.2.6",
     "@types/node": "^22.5.0",
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.25.0",
     "tsx": "^4.19.0"
   }
 }
