@@ -1,40 +1,40 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Guided Web Assistant</title>
+    <title>Asistente de navegación guiada</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main>
-      <h1>Guided Web Assistant</h1>
-      <div id="mode" class="mode">Context: <strong>DOM only</strong></div>
+      <h1>Asistente de navegación guiada</h1>
+      <div id="mode" class="mode">Contexto: <strong>solo DOM</strong></div>
 
-      <label for="question">What do you need help with?</label>
+      <label for="question">¿En qué necesitas ayuda?</label>
       <textarea
         id="question"
         rows="2"
-        placeholder="e.g. I don't know what to do here."
+        placeholder="Ej.: No sé qué hacer aquí."
       ></textarea>
 
-      <button id="help-btn">Help me with this page</button>
+      <button id="help-btn">Ayúdame con esta página</button>
 
       <hr />
 
-      <div class="assistant-label">Assistant:</div>
+      <div class="assistant-label">Asistente:</div>
       <div id="status" class="status"></div>
       <div id="answer" class="answer"></div>
 
       <section class="operator" hidden>
-        <label for="outcome">Validation outcome (operator only)</label>
+        <label for="outcome">Resultado (solo operador)</label>
         <select id="outcome">
-          <option value="">Record outcome…</option>
-          <option value="success">Success</option>
-          <option value="wrong_guidance">Wrong guidance</option>
-          <option value="unsafe_guidance">Unsafe guidance</option>
-          <option value="abandoned">Abandoned</option>
-          <option value="not_applicable">Not applicable</option>
+          <option value="">Registrar resultado…</option>
+          <option value="success">Funcionó</option>
+          <option value="wrong_guidance">Indicó mal</option>
+          <option value="unsafe_guidance">Indicación insegura</option>
+          <option value="abandoned">Abandonó</option>
+          <option value="not_applicable">No aplica</option>
         </select>
       </section>
     </main>

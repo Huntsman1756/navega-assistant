@@ -45,9 +45,9 @@ describe("prompt-injection / unsafe guidance", () => {
     expect(res.status).toBe(200);
     const json = (await res.json()) as { decision: { message: string } };
     const text = json.decision.message.toLowerCase();
-    expect(text).toContain("website");
-    expect(text).toContain("never tell me");
-    expect(text).toContain("enter it directly");
+    expect(text).toContain("sitio web");
+    expect(text).toContain("nunca me digas");
+    expect(text).toContain("directamente");
   });
 
   it("rejects a model response that invents an action kind", async () => {

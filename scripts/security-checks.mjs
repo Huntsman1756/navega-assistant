@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
@@ -59,20 +60,27 @@ if (readdirSafe(resolve(root, "apps", "extension", "dist"))) {
 }
 
 const envFile = resolve(root, ".env");
-if (statSafe(envFile)) fail("a real .env file exists (do not commit secrets)");
-else ok("no .env file present");
-
-function readdirSafe(p) {
+function isTrackedByGit(path) {
   try {
-    return statSync(p).isDirectory();
+    execFileSync("git", ["ls-files", "--error-unmatch", "--", path], { stdio: "ignore" });
+    return true;
   } catch {
     return false;
   }
 }
-function statSafe(p) {
+
+// A local, git-ignored .env (e.g. for the local backend key) is acceptable for
+// local development. Only a .env that is TRACKED by git would be committed as a
+// secret, and that is what must fail.
+if (isTrackedByGit(envFile)) {
+  fail(".env is tracked by git (do not commit secrets)");
+} else {
+  ok(".env is not tracked by git");
+}
+
+function readdirSafe(p) {
   try {
-    statSync(p);
-    return true;
+    return statSync(p).isDirectory();
   } catch {
     return false;
   }

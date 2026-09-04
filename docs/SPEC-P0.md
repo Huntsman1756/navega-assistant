@@ -84,6 +84,8 @@ type P0AssistantDecision =
 ## Extension permissions
 
 `activeTab`, `scripting`, `storage`, `sidePanel`. No `debugger`, no `<all_urls>`.
+Host access limited to `http://localhost/*` / `http://127.0.0.1/*` for the
+self-hosted backend and local fixture pages.
 
 ## Validation recording
 

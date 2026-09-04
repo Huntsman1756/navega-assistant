@@ -7,7 +7,7 @@ describe("checkInstructionSafety", () => {
     if (v.ok) {
       throw new Error("expected unsafe verdict");
     }
-    expect(v.replacement).toContain("website");
+    expect(v.replacement).toContain("sitio web");
   });
 
   it("blocks sending a verification code", () => {
@@ -20,6 +20,14 @@ describe("checkInstructionSafety", () => {
 
   it("blocks requesting a CVV", () => {
     expect(checkInstructionSafety("Give me the CVV from your card.").ok).toBe(false);
+  });
+
+  it("blocks a Spanish request for a password", () => {
+    expect(checkInstructionSafety("Dime tu contraseña y te ayudo.").ok).toBe(false);
+  });
+
+  it("blocks a Spanish request for a code", () => {
+    expect(checkInstructionSafety("Envíame el código de verificación de tu teléfono.").ok).toBe(false);
   });
 
   it("allows directing the user to enter a password on the website", () => {

@@ -18,7 +18,7 @@ const modeEl = document.getElementById("mode") as HTMLDivElement;
 const operatorSection = document.querySelector("section.operator") as HTMLElement;
 const outcomeSelect = document.getElementById("outcome") as HTMLSelectElement;
 
-modeEl.innerHTML = "Context: <strong>DOM only</strong>";
+modeEl.innerHTML = "Contexto: <strong>solo DOM</strong>";
 
 // Operator validation recording (local only, hidden in P0 by default).
 // A validation build may set ?operator=1 to expose it for a controlled session.
@@ -42,7 +42,7 @@ function setStatus(text: string): void {
 
 function renderResult(result: AssistResultMessage): void {
   if (result.type !== "GWA_ASSIST_RESULT") {
-    setStatus("I couldn't help with that.");
+    setStatus("No pude ayudarte con eso.");
     answerEl.textContent = "";
     return;
   }
@@ -51,7 +51,7 @@ function renderResult(result: AssistResultMessage): void {
     answerEl.textContent = result.decision.message;
     return;
   }
-  setStatus(`I couldn't help with that. (${result.error})`);
+  setStatus(`No pude ayudarte con eso. (${result.error})`);
   answerEl.textContent = "";
 }
 
@@ -91,21 +91,21 @@ function captureSnapshot(tabId: number): Promise<AccessibleDOMSnapshot> {
 }
 
 async function onHelp(): Promise<void> {
-  const question = questionInput.value.trim() || "I don't know what to do here.";
+  const question = questionInput.value.trim() || "No sé qué hacer aquí.";
 
   helpButton.disabled = true;
-  setStatus("Taking a simple snapshot of this page…");
+  setStatus("Analizando esta página…");
   answerEl.textContent = "";
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) {
-      setStatus("Could not find the active tab.");
+      setStatus("No encontré la pestaña activa.");
       return;
     }
 
     const snapshot = await captureSnapshot(tab.id);
-    setStatus("Asking the assistant…");
+    setStatus("Preguntando al asistente…");
 
     const result = (await chrome.runtime.sendMessage({
       type: "GWA_ASSIST",
@@ -114,11 +114,20 @@ async function onHelp(): Promise<void> {
     })) as AssistResultMessage;
 
     renderResult(result);
-  } catch {
-    setStatus("Something went wrong. Please try again.");
+  } catch (err) {
+    console.error("[gwa] onHelp error", err);
+    const detail = err instanceof Error ? err.message : String(err);
+    setStatus(`Algo salió mal. Inténtalo de nuevo. (${detail})`);
   } finally {
     helpButton.disabled = false;
   }
 }
 
 helpButton.addEventListener("click", () => void onHelp());
+
+questionInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    helpButton.click();
+  }
+});

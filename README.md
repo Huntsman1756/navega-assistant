@@ -39,18 +39,19 @@ The system does **not** (in P0):
 P0 prototype implementation: COMPLETE
 Source-release readiness: PASS
 OSS publication hygiene: PASS
-Human product validation: NEXT (G1)
+Pre-G1 validation baseline: FROZEN (v0.0.3-p0-g1-baseline)
+Human product validation: READY TO START (G1)
 P1 development: BLOCKED (product evidence pending)
 ```
 
 This version is an experimental validation prototype. It is not intended for
 production or unattended use.
 
-The version identifier `0.0.2-p0` expresses that we are before a stable
-release. Roadmap: see `docs/ROADMAP.md`. The next gate is **G1 — P0 Human
-Product Validation** (see `docs/VALIDATION-PLAN.md`). During G1 the engineering
-baseline is frozen; the decisive artifact is the consolidated G1 report
-(`docs/validation/G1-REPORT-TEMPLATE.md`).
+The version identifier `0.0.3-p0-g1-baseline` marks the exact implementation
+that is used in human validation. Roadmap: see `docs/ROADMAP.md`. The next gate
+is **G1 — P0 Human Product Validation** (see `docs/VALIDATION-PLAN.md`). During
+G1 the engineering baseline is frozen; the decisive artifact is the consolidated
+G1 report (`docs/validation/G1-REPORT-TEMPLATE.md`).
 
 ## Supported browsers
 
@@ -133,8 +134,9 @@ backend configuration.
 
 ## Security model
 
-- Least-privilege manifest: `activeTab`, `scripting`, `storage`, `sidePanel`.
-  No `debugger`, no `<all_urls>`.
+- Least-privilege manifest: `activeTab`, `scripting`, `storage`, `sidePanel`,
+  plus host access only to `http://localhost/*` and `http://127.0.0.1/*` (the
+  self-hosted backend and local fixture pages). No `debugger`, no `<all_urls>`.
 - Page content is treated as untrusted input.
 - Strict, versioned schemas (`additionalProperties: false`).
 - Structured output is not a complete safety boundary; an instruction-safety

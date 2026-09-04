@@ -32,7 +32,7 @@ export class MockProvider implements AIProvider {
     if (firstActionable?.accessibleName) {
       return {
         kind: "explain",
-        message: `Press "${firstActionable.accessibleName}".`,
+        message: `Pulsa "${firstActionable.accessibleName}".`,
       };
     }
 
@@ -44,13 +44,13 @@ export class MockProvider implements AIProvider {
       return {
         kind: "explain",
         message:
-          "This field asks for your password. Enter it directly on the website. Do not tell me your password.",
+          "Este campo pide tu contraseña. Escríbela directamente en el sitio web. No me digas tu contraseña.",
       };
     }
 
     return {
       kind: "ask_user",
-      message: "What would you like to do on this page?",
+      message: "¿Qué quieres hacer en esta página?",
     };
   }
 }

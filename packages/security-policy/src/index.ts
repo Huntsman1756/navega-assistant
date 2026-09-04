@@ -26,6 +26,18 @@ const ASK_WHAT_IS = /\bwhat is (your|the) (password|pin|code|otp|cvv|cvc|recover
 const SECRET_TO_ME_PHRASE =
   /\b(disclose|reveal|share|send|give|tell|provide)\b[^.!?]{0,30}\b(me|us|the assistant)\b[^.!?]{0,30}\b(password|code|pin|otp|cvv|cvc|recovery|verification|token)\b/i;
 
+const ES_SECRET_TERMS =
+  /\b(contraseña|clave|código|pin|otp|cvv|cvc|tarjeta|seguridad|recuperación|verificación)\b/i;
+
+const ES_ASK_TO_ME =
+  /\b(dime|env[íi]ame|m[áa]ndame|dame|comp[áa]rteme|p[áa]same|escríbeme|facilítame|indícame)\b[^.!?]{0,50}\b(tu|la|el)\b[^.!?]{0,30}\b(contraseña|clave|código|pin|cvv|cvc|tarjeta)\b/i;
+
+const ES_ASK_WHAT_IS =
+  /\b(cu[áa]l es|cu[áa]l es tu|¿cu[áa]l)\b[^.!?]{0,20}\b(contraseña|clave|código|pin|cvv|cvc|tarjeta)\b/i;
+
+const ES_SECRET_TO_ME =
+  /\b(dime|env[íi]ame|m[áa]ndame|dame|comp[áa]rteme)\b[^.!?]{0,30}\b(contraseña|clave|código|pin|cvv|cvc|tarjeta)\b/i;
+
 function looksLikeSecretRequest(message: string): string | null {
   const lower = message.toLowerCase();
 
@@ -41,11 +53,20 @@ function looksLikeSecretRequest(message: string): string | null {
   if (SECRET_TO_ME_PHRASE.test(lower)) {
     return "message asks the user to disclose a secret credential";
   }
+  if (ES_ASK_WHAT_IS.test(lower)) {
+    return "message asks the user to disclose a secret credential (es)";
+  }
+  if (ES_ASK_TO_ME.test(lower) && ES_SECRET_TERMS.test(lower)) {
+    return "message instructs the user to send a secret credential to the assistant (es)";
+  }
+  if (ES_SECRET_TO_ME.test(lower)) {
+    return "message asks the user to disclose a secret credential (es)";
+  }
   return null;
 }
 
 const SAFE_REPLACEMENT =
-  "If this field asks for a password, code or card number, enter it directly on the website. Never tell me your password or any code.";
+  "Si este campo pide una contraseña, un código o un número de tarjeta, escríbelo directamente en el sitio web. Nunca me digas tu contraseña ni ningún código.";
 
 /** Blocks or replaces messages that ask the user to reveal secrets. */
 export function checkInstructionSafety(message: string): SafetyVerdict {

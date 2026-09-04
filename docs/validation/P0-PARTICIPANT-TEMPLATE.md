@@ -60,6 +60,8 @@ POSITIVE_DELTA
 - [ ] `GUIDANCE_UNCLEAR` — it understands the page but explains poorly
 - [ ] `TARGET_NOT_FOUND` — instruction correct, person cannot find the control
 - [ ] `ASSISTANT_ACCESS_FRICTION` — the problem is opening/using Navega
+- [ ] `MULTI_ACTION_GUIDANCE` (descriptive, not a new taxonomy) — more than one
+      physical action in a single response
 
 ## Post-task questions (record answers)
 - Did you find it easier?
@@ -76,3 +78,5 @@ POSITIVE_DELTA
 - Problems a highlight would solve (`TARGET_NOT_FOUND`):
 - Problems unrelated to highlight (context/model `MODEL_WRONG`,
   conversational/UX `GUIDANCE_UNCLEAR`, onboarding `ASSISTANT_ACCESS_FRICTION`):
+- Descriptive: `MULTI_ACTION_GUIDANCE` occurrences (too many steps at once), noted
+  separately from `GUIDANCE_UNCLEAR`:

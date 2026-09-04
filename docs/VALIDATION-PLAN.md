@@ -137,6 +137,57 @@ a lot of GUIDANCE_UNCLEAR            → work on conversational policy/UX
 a lot of ASSISTANT_ACCESS_FRICTION   → fix entry/onboarding first
 ```
 
+## Descriptive event — MULTI_ACTION_GUIDANCE
+
+A descriptive marker (not yet a new taxonomy) for the login fixture and similar:
+
+```text
+MULTI_ACTION_GUIDANCE
+Navega gives more than one physical action in a single response.
+```
+
+Example:
+
+> escribe el usuario → escribe la contraseña → pulsa iniciar sesión
+
+This lets us separate two different phenomena:
+
+```text
+GUIDANCE_UNCLEAR       → the person does not understand what Navega means
+MULTI_ACTION_GUIDANCE  → they understand each step, but receive too many at once
+```
+
+Record it as a descriptive datum. Do not convert it into `GUIDANCE_UNCLEAR` until we see what real participants do.
+
+## Suggested task set (per participant, 4–6 tasks)
+
+```text
+T1  Login / access
+T2  Account recovery
+T3  E-commerce product page
+T4  Administrative form
+T5  Social or webmail navigation
+T6  Confusing / error / suspicious content page
+```
+
+It is not mandatory to do all six per person; 4–6 tasks per participant is enough.
+
+## Session flow for P01 + login fixture
+
+1. **Baseline.** Show the fixture without Navega; give only the task goal. Do not
+   explain where to press or which fields to use. Record completion/abandonment,
+   approximate time, errors, help requested and verbalizations.
+2. **Reset the fixture.** Return to the initial state. Open Navega with the real
+   provider. Give an equivalent task and let the participant phrase their own
+   question — do not write the prompt for them.
+3. **Assisted.** Record literally each Navega response and what the person does
+   afterwards. Watch `MODEL_WRONG`, `GUIDANCE_UNCLEAR`, `TARGET_NOT_FOUND`,
+   `ASSISTANT_ACCESS_FRICTION` and `MULTI_ACTION_GUIDANCE`.
+4. **Do not intervene early.** If the person stalls, record the situation first.
+   Only intervene if they explicitly abandon, request human help, or the
+   protocol decides the task should end.
+5. **Post-task.** The four short questions (see participant template).
+
 ## Domain matrix
 
 Record results by broad domain category (the matrix discovers failure

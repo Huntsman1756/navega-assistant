@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.0.3-p0-g1-baseline] - 2026-09-04
+
+### Status
+- Pre-G1 validation baseline. This is the EXACT artifact used in human
+  validation. Nothing more should change while G1 runs.
+
+### Validation-baseline changes
+- Spanish validation UI (Side Panel)
+- Enter-to-submit interaction
+- Corrected `localhost` backend host permission (`http://localhost/*`)
+- Configurable JSON-mode support for the OpenAI-compatible provider
+- Spanish instruction-safety patterns and Spanish replacement message
+- nan.builders provider configuration guidance (OpenAI-compatible)
+
+No highlighting, vision, autonomous actions or P1 functionality added.
+
 ## [0.0.2-p0] - 2026-09-04
 
 ### Status

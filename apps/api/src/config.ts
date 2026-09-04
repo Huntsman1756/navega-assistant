@@ -33,7 +33,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
             "AI_BASE_URL, AI_API_KEY and AI_MODEL are required when AI_PROVIDER=openai-compatible",
           );
         }
-        provider = new OpenAICompatibleProvider({ baseUrl, apiKey, model });
+        const jsonMode = env.AI_JSON_MODE !== "0";
+        provider = new OpenAICompatibleProvider({ baseUrl, apiKey, model, jsonMode });
       }
       break;
     default:
