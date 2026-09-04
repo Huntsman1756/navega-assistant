@@ -8,6 +8,12 @@ The next open gate is **G1**:
 G1 — P0 HUMAN PRODUCT VALIDATION
 ```
 
+> **G1 artifact:** the pre-G1 baseline is `v0.0.4-p0-g1-baseline`. It adds a
+> small, **ephemeral current help session** (a bounded conversation so the
+> assistant can answer short follow-ups such as “ya estoy” / “¿y ahora?”) and a
+> **per-origin permission UX** for sites `activeTab` cannot reach. It does **not**
+> add highlighting, autonomous actions or browsing history.
+
 Requirement: **real human evidence**, not a technical gate. It is deliberately
 not a single percentage. The gate passes when the qualitative review answers
 these questions with evidence:
@@ -27,6 +33,12 @@ P1 is **deliberately blocked** until G1 produces this evidence.
 The P0 prototype has **no real vision/redaction flow** and no display of a
 highlight overlay. G1 therefore does **not** compare `DOM_ONLY` against
 `DOM_PLUS_VISION`. P0 is not modified to introduce that variable.
+
+The prototype holds a **bounded, ephemeral** current help conversation. When
+the participant says a short follow-up (e.g. “ya estoy”), the assistant should
+continue the same help task. This is a help-session feature, not a
+browsing-history tracker; the conversation resets with “Nueva ayuda” and is
+cleared on browser restart.
 
 Per assisted task, classify the outcome with one of:
 

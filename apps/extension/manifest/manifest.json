@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Guided Web Assistant",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Experimental product-validation prototype. A guided-navigation assistant for people who find web interfaces hard to use. The human remains in control.",
   "minimum_chrome_version": "116",
   "permissions": ["activeTab", "scripting", "storage", "sidePanel"],
   "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
+  "optional_host_permissions": ["*://*/*"],
   "action": {
     "default_title": "Guided Web Assistant"
   },

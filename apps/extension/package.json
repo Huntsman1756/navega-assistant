@@ -1,6 +1,6 @@
 {
   "name": "@guided-web/extension",
-  "version": "0.0.3-p0-g1-baseline",
+  "version": "0.0.4-p0-g1-baseline",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@guided-web/accessible-dom": "workspace:*",
-    "@guided-web/protocol": "workspace:*"
+    "@guided-web/protocol": "workspace:*",
+    "@guided-web/security-policy": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.5.4",

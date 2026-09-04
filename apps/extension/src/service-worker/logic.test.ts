@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { requestAssist, buildAssistPayload } from "./logic";
-import type { AccessibleDOMSnapshot } from "@guided-web/protocol";
+import type { AccessibleDOMSnapshot, HelpSession } from "@guided-web/protocol";
 
 function snapshot(label: string): AccessibleDOMSnapshot {
   return {
@@ -9,6 +9,10 @@ function snapshot(label: string): AccessibleDOMSnapshot {
     page: { url: "https://example.com", origin: "https://example.com", title: label },
     elements: [{ id: "el-0", tag: "button", role: "button", accessibleName: label, interactive: true }],
   };
+}
+
+function emptySession(): HelpSession {
+  return { schemaVersion: 1, sessionId: "s-test", turns: [] };
 }
 
 function okFetch(body: unknown): () => Promise<Response> {
@@ -29,8 +33,8 @@ describe("service worker assist logic (stateless, P0-14)", () => {
       );
     };
 
-    const a = await requestAssist("http://localhost:8787", snapshot("a"), "q1", fetchImpl);
-    const b = await requestAssist("http://localhost:8787", snapshot("b"), "q2", fetchImpl);
+    const a = await requestAssist("http://localhost:8787", snapshot("a"), "q1", emptySession(), fetchImpl);
+    const b = await requestAssist("http://localhost:8787", snapshot("b"), "q2", emptySession(), fetchImpl);
     expect(a).toMatchObject({ type: "GWA_ASSIST_RESULT", ok: true });
     expect(b).toMatchObject({ type: "GWA_ASSIST_RESULT", ok: true });
     // Each request must reach the backend fresh — no cached/stale reuse.
@@ -46,20 +50,21 @@ describe("service worker assist logic (stateless, P0-14)", () => {
         ),
       );
     // New closure each time = new worker instance.
-    const first = await requestAssist("http://localhost:8787", snapshot("x"), "q", fetchImpl);
-    const second = await requestAssist("http://localhost:8787", snapshot("y"), "q", fetchImpl);
+    const first = await requestAssist("http://localhost:8787", snapshot("x"), "q", emptySession(), fetchImpl);
+    const second = await requestAssist("http://localhost:8787", snapshot("y"), "q", emptySession(), fetchImpl);
     expect(first).toMatchObject({ ok: true });
     expect(second).toMatchObject({ ok: true });
   });
 
   it("returns ok:false (and never a stale/valid-looking answer) on backend failure", async () => {
     const fetchImpl = () => Promise.reject(new Error("network"));
-    const res = await requestAssist("http://localhost:8787", snapshot("z"), "q", fetchImpl);
+    const res = await requestAssist("http://localhost:8787", snapshot("z"), "q", emptySession(), fetchImpl);
     expect(res).toEqual({ type: "GWA_ASSIST_RESULT", ok: false, error: "network" });
   });
 
-  it("builds a mode-locked DOM_ONLY payload", () => {
-    const payload = buildAssistPayload(snapshot("s"), "hello");
-    expect(payload).toMatchObject({ protocolVersion: 1, mode: "DOM_ONLY", question: "hello" });
+  it("builds a mode-locked DOM_ONLY payload carrying the session", () => {
+    const payload = buildAssistPayload(snapshot("s"), "hello", emptySession());
+    expect(payload).toMatchObject({ protocolVersion: 2, mode: "DOM_ONLY", question: "hello" });
+    expect(payload.session).toMatchObject({ schemaVersion: 1, turns: [] });
   });
 });

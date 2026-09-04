@@ -38,6 +38,7 @@ export function createApp(provider: AIProvider, providerName: string, model?: st
       response = await provider.assist({
         mode: req.mode,
         question: req.question,
+        session: req.session,
         snapshot: req.snapshot,
         systemPrompt: buildSystemPrompt(),
       });

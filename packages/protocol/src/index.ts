@@ -12,7 +12,7 @@
 import { z } from "zod";
 
 /** Version of the wire protocol. Bump on breaking schema changes. */
-export const PROTOCOL_VERSION = 1 as const;
+export const PROTOCOL_VERSION = 2 as const;
 
 /** Context capture mode. The operator, not the model, chooses the mode in P0. */
 export const ContextModeSchema = z.enum(["DOM_ONLY", "DOM_PLUS_VISION"]);
@@ -104,13 +104,59 @@ export const P0AssistantDecisionSchema = z.discriminatedUnion("kind", [
 ]);
 export type P0AssistantDecision = z.infer<typeof P0AssistantDecisionSchema>;
 
+/**
+ * A single turn in the current help conversation.
+ *
+ * The conversation is a bounded narrative of the CURRENT help task only. It is
+ * NOT browsing history. Turns never carry page snapshots, and a turn text may
+ * never contain secret values (the extension sanitizes before appending).
+ */
+export const HelpTurnSchema = z.discriminatedUnion("role", [
+  z
+    .object({
+      role: z.literal("user"),
+      text: z.string().min(1).max(4000),
+      timestamp: z.number(),
+    })
+    .strict(),
+  z
+    .object({
+      role: z.literal("assistant"),
+      text: z.string().min(1).max(4000),
+      timestamp: z.number(),
+    })
+    .strict(),
+]);
+export type HelpTurn = z.infer<typeof HelpTurnSchema>;
+
+/**
+ * Versioned, ephemeral session-scoped help context.
+ *
+ * - Belongs to the current help task, NOT to browser history.
+ * - `turns` are bounded (the extension trims deterministically).
+ * - `currentOrigin` mirrors the most recent page origin; the authoritative
+ *   current page is ALWAYS the fresh `snapshot` in the request.
+ * - No page snapshot, no secrets, no full page contents are ever stored here.
+ */
+export const HelpSessionSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    sessionId: z.string().min(1).max(64),
+    goal: z.string().max(4000).optional(),
+    currentOrigin: z.string().max(2000).optional(),
+    turns: z.array(HelpTurnSchema),
+  })
+  .strict();
+export type HelpSession = z.infer<typeof HelpSessionSchema>;
+
 /** Request from extension to backend. */
 export const AssistRequestSchema = z
   .object({
-    protocolVersion: z.literal(1),
+    protocolVersion: z.literal(2),
     mode: ContextModeSchema,
     question: z.string().min(1).max(2000),
     snapshot: AccessibleDOMSnapshotSchema,
+    session: HelpSessionSchema,
   })
   .strict();
 export type AssistRequest = z.infer<typeof AssistRequestSchema>;
@@ -118,7 +164,7 @@ export type AssistRequest = z.infer<typeof AssistRequestSchema>;
 /** Response from backend to extension. */
 export const AssistResponseSchema = z
   .object({
-    protocolVersion: z.literal(1),
+    protocolVersion: z.literal(2),
     decision: P0AssistantDecisionSchema,
     mode: ContextModeSchema,
     provider: z.string().optional(),

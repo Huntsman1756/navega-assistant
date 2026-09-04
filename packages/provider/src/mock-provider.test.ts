@@ -6,6 +6,7 @@ const base: AssistModelRequest = {
   mode: "DOM_ONLY",
   question: "I don't know what to do here.",
   systemPrompt: "You are a test.",
+  session: { schemaVersion: 1, sessionId: "s-test", turns: [] },
   snapshot: {
     schemaVersion: 1,
     snapshotId: "snap-1",
@@ -53,5 +54,30 @@ describe("MockProvider", () => {
     const res = await p.assist(req);
     const decision = JSON.parse(res.raw) as { kind: string; message: string };
     expect(decision.message.toLowerCase()).not.toContain("tell me your password");
+  });
+
+  it("acknowledges previous conversation context deterministically", async () => {
+    const p = new MockProvider();
+    const req: AssistModelRequest = {
+      ...base,
+      session: {
+        schemaVersion: 1,
+        sessionId: "s-ctx",
+        turns: [
+          { role: "user", text: "Quiero un correo de GitHub.", timestamp: 1 },
+          { role: "assistant", text: "Estás en Gmail. Pulsa “Recibidos”.", timestamp: 2 },
+        ],
+      },
+      snapshot: {
+        ...base.snapshot,
+        elements: [
+          { id: "el-0", tag: "button", role: "button", accessibleName: "Recibidos", interactive: true },
+        ],
+      },
+    };
+    const res = await p.assist(req);
+    const decision = JSON.parse(res.raw) as { kind: string; message: string };
+    expect(decision.message).toContain("Sigamos.");
+    expect(decision.message).toContain("Recibidos");
   });
 });

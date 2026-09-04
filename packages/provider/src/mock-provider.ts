@@ -20,7 +20,13 @@ export class MockProvider implements AIProvider {
     message: string;
     reason?: string;
   } {
-    const { snapshot } = request;
+    const { snapshot, session } = request;
+
+    // Deterministic continuity signal: when there is prior conversation the
+    // mock acknowledges the current help task, so automated tests can verify the
+    // backend really forwarded the recent conversation to the model.
+    const hasContext = !!session && Array.isArray(session.turns) && session.turns.length > 0;
+    const prefix = hasContext ? "Sigamos. " : "";
 
     const firstActionable = snapshot.elements.find(
       (el) =>
@@ -32,7 +38,7 @@ export class MockProvider implements AIProvider {
     if (firstActionable?.accessibleName) {
       return {
         kind: "explain",
-        message: `Pulsa "${firstActionable.accessibleName}".`,
+        message: `${prefix}Pulsa "${firstActionable.accessibleName}".`,
       };
     }
 
@@ -50,7 +56,7 @@ export class MockProvider implements AIProvider {
 
     return {
       kind: "ask_user",
-      message: "¿Qué quieres hacer en esta página?",
+      message: `${prefix}¿Qué quieres hacer en esta página?`,
     };
   }
 }

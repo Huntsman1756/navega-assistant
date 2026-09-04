@@ -74,9 +74,11 @@ Expose extremely simple actions:
 - “What do I press?”
 - “I don’t know what to do”
 
-**CURRENTLY IMPLEMENTED (P0):** a minimal Side Panel with a question field,
-a context-mode indicator, one “Help me with this page” action, and a single
-assistant answer.
+**CURRENTLY IMPLEMENTED (P0):** a minimal Side Panel with a question field, a
+context-mode indicator, a “Ayúdame” action, a “Nueva ayuda” reset, and a small
+**current-help-session conversation** (bounded recent turns). The assistant
+remembers the current help task so it can answer short follow-ups; it does not
+collect browsing history.
 
 ### Manifest V3 service worker
 Treat as ephemeral. Do not rely on long-lived global variables. Target
@@ -143,8 +145,8 @@ Configuration is environment-based via `.env`. The extension MUST NEVER receive
 | semantic diff | React only to meaningful DOM state changes |
 | MutationObserver | Observations, never a direct trigger of an LLM call |
 | isolated overlay | Highlight; owned by the extension, `pointer-events: none` |
-| side panel | Present (P0, minimal) |
-| session state | Resilient; survive service-worker restarts |
+| side panel | Present (P0, minimal conversation) |
+| session state | Ephemeral in P0 (Side Panel + `chrome.storage.session`); not a browsing history; durable/resilient session is future |
 | provider abstraction | Present (P0) |
 | schema validation | Present (P0) |
 | policy engine | Present (P0, minimal safety) |
@@ -242,10 +244,18 @@ Never display “Someone is reviewing this” unless that fact is genuinely know
 ## 12. CURRENTLY IMPLEMENTED (P0)
 
 - TypeScript pnpm monorepo (`apps/extension`, `apps/api`, `packages/*`)
-- MV3 extension: `activeTab`, `scripting`, `storage`, `sidePanel`
+- MV3 extension: `activeTab`, `scripting`, `storage`, `sidePanel`; required host
+  access only to `http://localhost/*` / `http://127.0.0.1/*`; broad host
+  capability declared **optionally** (per-origin grants, never default)
 - On-demand sanitized snapshot extraction (DOM-derived, no CDP/debugger)
-- Strict shared schemas (`packages/protocol`)
-- Provider abstraction + `mock` + `openai-compatible`
+- **Current Help Session**: bounded, ephemeral conversation (not browsing
+  history); authoritative in the Side Panel, checkpointed in
+  `chrome.storage.session`
+- **Per-origin permission UX**: asks the user for access only to the specific
+  site and retries safely; browser-protected pages degrade cleanly
+- Strict shared schemas (`packages/protocol`, `PROTOCOL_VERSION 2`)
+- Provider abstraction + `mock` + `openai-compatible` (nan.builders configured
+  through the OpenAI-compatible interface)
 - Self-hostable backend with policy pipeline
-- Minimal Side Panel UI
+- Minimal Side Panel conversation UI
 - Deterministic fixture pages + tests

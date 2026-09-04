@@ -6,6 +6,8 @@ import {
   AssistResponseSchema,
   ContextModeSchema,
   GuidanceActionSchema,
+  HelpSessionSchema,
+  HelpTurnSchema,
 } from "./index";
 
 const validSnapshot = {
@@ -48,23 +50,59 @@ describe("AccessibleDOMSnapshotSchema", () => {
   });
 });
 
+describe("HelpTurnSchema", () => {
+  it("accepts a valid user turn", () => {
+    expect(HelpTurnSchema.safeParse({ role: "user", text: "hola", timestamp: 1 }).success).toBe(true);
+  });
+  it("rejects unknown roles", () => {
+    expect(HelpTurnSchema.safeParse({ role: "system", text: "hola", timestamp: 1 }).success).toBe(false);
+  });
+  it("rejects unknown fields", () => {
+    expect(HelpTurnSchema.safeParse({ role: "user", text: "hola", timestamp: 1, snapshot: {} }).success).toBe(false);
+  });
+});
+
+describe("HelpSessionSchema", () => {
+  it("accepts a valid session with empty turns", () => {
+    expect(HelpSessionSchema.safeParse({ schemaVersion: 1, sessionId: "s1", turns: [] }).success).toBe(true);
+  });
+  it("rejects a session that tries to carry a snapshot", () => {
+    const r = HelpSessionSchema.safeParse({ schemaVersion: 1, sessionId: "s1", turns: [], snapshot: {} });
+    expect(r.success).toBe(false);
+  });
+});
+
 describe("AssistRequestSchema", () => {
-  it("accepts a valid request", () => {
+  const emptySession = { schemaVersion: 1, sessionId: "s1", turns: [] };
+
+  it("accepts a valid request with a session", () => {
     const r = AssistRequestSchema.safeParse({
-      protocolVersion: 1,
+      protocolVersion: 2,
       mode: "DOM_ONLY",
       question: "What do I do?",
       snapshot: validSnapshot,
+      session: emptySession,
     });
     expect(r.success).toBe(true);
   });
 
-  it("rejects unknown fields", () => {
+  it("rejects a request missing the session field", () => {
     const r = AssistRequestSchema.safeParse({
-      protocolVersion: 1,
+      protocolVersion: 2,
       mode: "DOM_ONLY",
       question: "What do I do?",
       snapshot: validSnapshot,
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects unknown fields", () => {
+    const r = AssistRequestSchema.safeParse({
+      protocolVersion: 2,
+      mode: "DOM_ONLY",
+      question: "What do I do?",
+      snapshot: validSnapshot,
+      session: emptySession,
       unexpected: true,
     });
     expect(r.success).toBe(false);
@@ -72,10 +110,11 @@ describe("AssistRequestSchema", () => {
 
   it("rejects a bad mode", () => {
     const r = AssistRequestSchema.safeParse({
-      protocolVersion: 1,
+      protocolVersion: 2,
       mode: "AUTOPILOT",
       question: "x",
       snapshot: validSnapshot,
+      session: emptySession,
     });
     expect(r.success).toBe(false);
   });

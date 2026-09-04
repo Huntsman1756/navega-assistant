@@ -8,23 +8,35 @@
   </head>
   <body>
     <main>
-      <h1>Asistente de navegación guiada</h1>
-      <div id="mode" class="mode">Contexto: <strong>solo DOM</strong></div>
+      <header>
+        <h1>Asistente de navegación guiada</h1>
+        <div id="mode" class="mode">Contexto: <strong>solo DOM</strong></div>
+      </header>
 
-      <label for="question">¿En qué necesitas ayuda?</label>
-      <textarea
-        id="question"
-        rows="2"
-        placeholder="Ej.: No sé qué hacer aquí."
-      ></textarea>
+      <div id="conversation" class="conversation" role="log" aria-live="polite"></div>
 
-      <button id="help-btn">Ayúdame con esta página</button>
+      <section id="permission" class="permission" hidden>
+        <p id="permission-text" class="permission-text"></p>
+        <div class="permission-actions">
+          <button id="permission-allow" class="secondary">Permitir aquí</button>
+          <button id="permission-deny" class="ghost">Ahora no</button>
+        </div>
+      </section>
 
-      <hr />
+      <div id="status" class="status" role="status" aria-live="polite"></div>
 
-      <div class="assistant-label">Asistente:</div>
-      <div id="status" class="status"></div>
-      <div id="answer" class="answer"></div>
+      <div class="composer">
+        <label for="question">¿En qué necesitas ayuda?</label>
+        <textarea
+          id="question"
+          rows="2"
+          placeholder="Ej.: No sé qué hacer aquí."
+        ></textarea>
+        <div class="composer-actions">
+          <button id="help-btn">Ayúdame</button>
+          <button id="new-help-btn" class="ghost">Nueva ayuda</button>
+        </div>
+      </div>
 
       <section class="operator" hidden>
         <label for="outcome">Resultado (solo operador)</label>

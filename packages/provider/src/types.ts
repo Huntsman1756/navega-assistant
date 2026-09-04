@@ -5,12 +5,14 @@
  * model request into a raw model output string; they never decide policy.
  * Structural validation and instruction safety live in the backend, not here.
  */
-import type { AccessibleDOMSnapshot, ContextMode } from "@guided-web/protocol";
+import type { AccessibleDOMSnapshot, ContextMode, HelpSession } from "@guided-web/protocol";
 
 export interface AssistModelRequest {
   mode: ContextMode;
   question: string;
   snapshot: AccessibleDOMSnapshot;
+  /** Bounded recent help conversation (never a browsing history). */
+  session: HelpSession;
   /** System prompt describing the task, untrusted-content and safety constraints. */
   systemPrompt: string;
 }

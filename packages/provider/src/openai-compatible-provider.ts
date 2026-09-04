@@ -66,6 +66,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     return JSON.stringify({
       mode: request.mode,
       question: request.question,
+      session: request.session,
       snapshot: request.snapshot,
     });
   }

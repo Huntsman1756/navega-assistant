@@ -10,9 +10,13 @@ eventually highlights — **the human remains the executor**.
 ## What it does
 
 - Opens from a Chromium **Side Panel**.
+- Keeps a small, **ephemeral** current help session so it can answer short
+  follow-ups like “ya estoy” or “¿y ahora?” (this is a bounded help
+  conversation, **not** a browsing history).
 - Observes the current tab **after an explicit user action**.
-- Extracts a compact, sanitized, **DOM-derived** `AccessibleDOMSnapshot`.
-- Sends it to a **self-hostable backend**.
+- Extracts a compact, sanitized, **DOM-derived** `AccessibleDOMSnapshot` (fresh
+  on every request).
+- Sends it plus the recent conversation to a **self-hostable backend**.
 - Calls a **configurable AI provider** and returns **one simple instruction**.
 
 ## What it deliberately does NOT do
@@ -39,7 +43,7 @@ The system does **not** (in P0):
 P0 prototype implementation: COMPLETE
 Source-release readiness: PASS
 OSS publication hygiene: PASS
-Pre-G1 validation baseline: FROZEN (v0.0.3-p0-g1-baseline)
+Pre-G1 validation baseline: FROZEN (v0.0.4-p0-g1-baseline)
 Human product validation: READY TO START (G1)
 P1 development: BLOCKED (product evidence pending)
 ```
@@ -47,11 +51,13 @@ P1 development: BLOCKED (product evidence pending)
 This version is an experimental validation prototype. It is not intended for
 production or unattended use.
 
-The version identifier `0.0.3-p0-g1-baseline` marks the exact implementation
-that is used in human validation. Roadmap: see `docs/ROADMAP.md`. The next gate
-is **G1 — P0 Human Product Validation** (see `docs/VALIDATION-PLAN.md`). During
-G1 the engineering baseline is frozen; the decisive artifact is the consolidated
-G1 report (`docs/validation/G1-REPORT-TEMPLATE.md`).
+The version identifier `0.0.4-p0-g1-baseline` marks the exact implementation
+that is used in human validation. It adds a small, ephemeral current-help-session
+conversation and a per-origin permission UX; it does **not** add highlighting,
+autonomous actions or browsing history. Roadmap: see `docs/ROADMAP.md`. The next
+gate is **G1 — P0 Human Product Validation** (see `docs/VALIDATION-PLAN.md`).
+During G1 the engineering baseline is frozen; the decisive artifact is the
+consolidated G1 report (`docs/validation/G1-REPORT-TEMPLATE.md`).
 
 ## Supported browsers
 
@@ -126,8 +132,14 @@ backend configuration.
 
 ## Privacy model
 
-- Only a **sanitized** snapshot plus the user's question leave the browser.
-- Input values (password, OTP, card numbers, tokens) are never serialized.
+- A **sanitized** snapshot, the current question and a **short, bounded** recent
+  help conversation leave the browser.
+- The current help session is **ephemeral** and is **not** a browsing history.
+  It lives in the Side Panel plus `chrome.storage.session` (cleared on restart),
+  never `chrome.storage.local`.
+- Input values (password, OTP, card numbers, tokens) are never serialized, and
+  user-typed secrets are redacted before being stored in the conversation.
+- The **Nueva ayuda** button clears the current help session.
 - No telemetry, analytics SDK or crash reporting by default.
 - P0 validation data stays local unless explicitly exported. See
   `docs/PRIVACY.md`.
@@ -136,12 +148,15 @@ backend configuration.
 
 - Least-privilege manifest: `activeTab`, `scripting`, `storage`, `sidePanel`,
   plus host access only to `http://localhost/*` and `http://127.0.0.1/*` (the
-  self-hosted backend and local fixture pages). No `debugger`, no `<all_urls>`.
-- Page content is treated as untrusted input.
-- Strict, versioned schemas (`additionalProperties: false`).
+  self-hosted backend and local fixture pages). No `debugger`, no permanent
+  `<all_urls>`. A broad host capability is declared **optionally** only, never
+  granted by default; the user grants individual sites explicitly.
+- Page content is treated as untrusted input, and page/session text can never
+  inject conversation roles or override system policy.
+- Strict, versioned schemas (`additionalProperties: false`, `PROTOCOL_VERSION 2`).
 - Structured output is not a complete safety boundary; an instruction-safety
   layer blocks/replaces requests for secrets.
-- No `click`/`type`/`submit` primitives exist.
+- No `click`/`type`/`submit`/`executeJavaScript` primitives exist.
 
 See `docs/SECURITY-INVARIANTS.md` and `docs/THREAT-MODEL.md`.
 

@@ -67,6 +67,9 @@ importers:
       '@guided-web/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@guided-web/security-policy':
+        specifier: workspace:*
+        version: link:../../packages/security-policy
     devDependencies:
       '@playwright/test':
         specifier: ^1.47.0

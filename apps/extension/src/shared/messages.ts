@@ -4,7 +4,7 @@
  * These are P0-internal extension messages. They carry sanitized snapshots
  * only; they never carry secrets or provider keys.
  */
-import type { AccessibleDOMSnapshot, P0AssistantDecision } from "@guided-web/protocol";
+import type { AccessibleDOMSnapshot, HelpSession, P0AssistantDecision } from "@guided-web/protocol";
 
 export interface SnapshotMessage {
   type: "GWA_SNAPSHOT";
@@ -15,6 +15,7 @@ export interface AssistMessage {
   type: "GWA_ASSIST";
   snapshot: AccessibleDOMSnapshot;
   question: string;
+  session: HelpSession;
 }
 
 export type AssistResultMessage =

@@ -21,7 +21,7 @@ phase in which it is fully implemented.
 | P0-11 | No `click`, `type` or `submit` capability exists in the initial architecture. | P0 |
 | P0-12 | AI provider credentials exist only in backend configuration. | P0 |
 | P0-13 | Authoritative quotas are enforced server-side. | P2 |
-| P0-14 | Service-worker termination must not corrupt persistent session state. | N/A in P0 (no persistent guidance session). Required in P1/P2 before persistent sessions are introduced. |
+| P0-14 | Service-worker termination must not corrupt session state. | P0 (session is authoritative in the Side Panel; the service worker is stateless) |
 | P0-15 | Structured output is not considered a complete safety boundary. Valid output still requires policy enforcement. | P0 |
 | P0-16 | The assistant must never ask the user to disclose a password, OTP, recovery code, CVV or equivalent secret to the assistant. | P0 |
 | P0-17 | Failure to resolve context must degrade safely to asking the user, escalation or blocking. It must never produce a silent guess. | P0 |
@@ -29,6 +29,8 @@ phase in which it is fully implemented.
 | P0-19 | Installing/configuring the assistant as a Trusted Contact MUST NOT grant access to the Assisted User’s browsing, conversations, screenshots, history or sessions. | P2 |
 | P0-20 | Escalation packages MUST contain only the minimum information necessary for the specific problem and must not automatically contain unrelated history. | P2 |
 | P0-21 | The system MUST distinguish escalation prepared / shared / delivery confirmed / contact-response-received and MUST NOT imply a human is reviewing unless actually known. | P2 |
+| P0-22 | The current help session is ephemeral, bounded (≤ ~10 turns), never stores page snapshots as history, never retains secret input values, and is NOT a browsing history or behavioural profile. | P0 |
+| P0-23 | Conversation history must never bypass the sanitizer or secret policy, and page/injection content must never be able to inject arbitrary conversation roles or become a system instruction. | P0 |
 
 ---
 
@@ -51,13 +53,20 @@ phase in which it is fully implemented.
   requests for secrets.
 - **P0-17:** The decision vocabulary has an explicit `cannot_help` outcome and
   the UI shows a clear failure message; nothing is silently guessed.
-- **P0-14 (N/A in P0):** P0 has no persistent guidance session. Every assist is
-  a self-contained request to the backend; the service worker is stateless.
-  `apps/extension/src/service-worker/logic.test.ts` verifies that a fresh
-  worker invocation always fetches from the backend (never reuses a prior
+- **P0-14:** The current help session is authoritative in the **Side Panel**
+  (live UX state), with a recoverable checkpoint in `chrome.storage.session`.
+  The service worker is stateless: it only forwards a sanitized request. A
+  worker restart cannot corrupt the session because the worker holds no session
+  state. `apps/extension/src/service-worker/logic.test.ts` verifies that a
+  fresh worker invocation always fetches from the backend (never reuses a prior
   response) and that a backend failure yields `ok:false` — it can never present
-  a stale answer from a previous execution as valid. If a persistent session is
-  ever introduced (P1/P2), P0-14 becomes mandatory and must be re-verified.
+  a stale answer from a previous execution as valid.
+- **P0-22 / P0-23:** The session module (`apps/extension/src/session/session.ts`)
+  bounds turns deterministically (≤ `MAX_TURNS`), never stores a snapshot in a
+  turn, and redacts user-typed secret values before retention. The strict
+  `HelpSessionSchema` rejects unknown roles/fields, so page or user text cannot
+  inject arbitrary conversation roles. The backend keeps page content in the
+  user message only and never merges it into the system policy.
 
 ---
 
@@ -69,5 +78,6 @@ phase in which it is fully implemented.
 - No screenshot redaction / vision policy yet (P0-18 is P2).
 - No target identity/resolution or stale-response guarding yet (P0-03/04/09/10
   are P1/P2).
-- P0-14 is **N/A** because P0 holds no persistent guidance session; it becomes
-  mandatory when persistent sessions are added (P1/P2).
+- The current help session is ephemeral and bounded; it is not a durable,
+  cross-session persistent store. Durable sessions remain future (P1/P2) and
+  would require re-verifying P0-14/P0-22.

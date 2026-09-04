@@ -12,6 +12,8 @@ const snapshot: AccessibleDOMSnapshot = {
   ],
 };
 
+const emptySession = { schemaVersion: 1, sessionId: "s1", turns: [] };
+
 const app = createApp(new MockProvider(), "mock", "mock");
 
 async function post(body: unknown): Promise<{ status: number; json: any }> {
@@ -32,10 +34,11 @@ describe("POST /v1/assist", () => {
 
   it("returns a valid explain decision using the mock provider", async () => {
     const r = await post({
-      protocolVersion: 1,
+      protocolVersion: 2,
       mode: "DOM_ONLY",
       question: "I don't know what to do here.",
       snapshot,
+      session: emptySession,
     });
     expect(r.status).toBe(200);
     expect(r.json.decision.kind).toBe("explain");
@@ -45,10 +48,11 @@ describe("POST /v1/assist", () => {
 
   it("rejects a snapshot that would carry a value field", async () => {
     const bad = {
-      protocolVersion: 1,
+      protocolVersion: 2,
       mode: "DOM_ONLY",
       question: "hi",
       snapshot: { ...snapshot, elements: [{ id: "x", tag: "input", role: "textbox", value: "s3cret" }] },
+      session: emptySession,
     };
     const r = await post(bad);
     expect(r.status).toBe(400);

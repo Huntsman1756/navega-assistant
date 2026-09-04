@@ -6,12 +6,18 @@
 
 A minimal assistant that:
 - opens from a Chromium extension (Side Panel);
+- keeps a small, **ephemeral** current-help-session conversation (bounded,
+  never a browsing history);
 - observes the current tab **after an explicit user action**;
-- extracts a compact, sanitized, DOM-derived **AccessibleDOMSnapshot**;
-- receives a user question;
-- sends the safe context to the self-hostable backend;
+- extracts a compact, sanitized, DOM-derived **AccessibleDOMSnapshot** (fresh on
+  every request);
+- receives a user question and shows a small ongoing conversation;
+- sends the safe context (current question + recent conversation + fresh
+  snapshot) to the self-hostable backend;
 - calls a configurable AI provider;
 - returns **one simple instruction/explanation**;
+- requests per-origin access explicitly when a site cannot be reached via
+  `activeTab`;
 - optionally records an operator validation outcome locally.
 
 ## Deliberately NOT implemented in P0
@@ -83,9 +89,14 @@ type P0AssistantDecision =
 
 ## Extension permissions
 
-`activeTab`, `scripting`, `storage`, `sidePanel`. No `debugger`, no `<all_urls>`.
-Host access limited to `http://localhost/*` / `http://127.0.0.1/*` for the
-self-hosted backend and local fixture pages.
+Required: `activeTab`, `scripting`, `storage`, `sidePanel`; host access limited
+to `http://localhost/*` / `http://127.0.0.1/*` for the self-hosted backend and
+local fixture pages. No `debugger`, no permanent `<all_urls>`.
+
+Declared **optionally** (never granted by default): `optional_host_permissions`
+of `*://*/*`. This is a per-origin capability only; the user grants individual
+sites explicitly (e.g. “Permitir aquí”), and it cannot be used to read
+browser-protected pages (`chrome://`, `edge://`, Chrome Web Store).
 
 ## Validation recording
 

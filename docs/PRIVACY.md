@@ -20,14 +20,53 @@ is no hidden “family dashboard”.
 
 ## What leaves the browser (P0)
 
-Only a **sanitized, compact DOM-derived snapshot** plus the user's typed
-question are sent to the self-hostable backend. Specifically, the snapshot:
+Only a **sanitized, compact DOM-derived snapshot**, the user's current question
+and a **short, bounded recent help conversation** are sent to the
+self-hostable backend. Specifically, the snapshot:
 
 - contains roles, accessible names, interactive flags and element states;
 - **never** contains input values (password, OTP, card numbers, tokens);
 - excludes hidden inputs and script/style content.
 
-The backend constructs the prompt and calls the configured AI provider.
+The current help conversation is bounded (the most recent ~10 turns), never
+contains page snapshots, and is never used to build a browsing history or a
+behavioural profile. The backend constructs the prompt and calls the configured
+AI provider.
+
+## Current Help Session (≠ Browsing History)
+
+The assistant keeps a small, **ephemeral**, session-scoped memory of the current
+help task so it can answer short follow-ups like “ya estoy” or “¿y ahora?”. This
+is **not** a browsing history.
+
+**What is kept**
+
+- A short, bounded recent conversation (up to ~10 turns): user questions and the
+  assistant's replies, with timestamps.
+- An optional `goal` (the original user intent) and the most recent page origin.
+- Stored **only** in the Side Panel live state and, as a recoverable checkpoint,
+  in `chrome.storage.session` (which clears on browser restart).
+
+**What is NEVER kept**
+
+- Browsing history or a list of visited URLs/pages.
+- Page snapshots inside the conversation (the DOM is always captured fresh per
+  request and never stored as history).
+- Full email/page contents as historical state.
+- A permanent behavioural profile or cross-session memory.
+- Secret values. If a user accidentally types a password/OTP/card value into the
+  question box, it is redacted before it is stored in the conversation.
+
+**Where and how long**
+
+- Side Panel: authoritative live state for the current help task.
+- `chrome.storage.session`: ephemeral, cleared on browser restart.
+- **Not** `chrome.storage.local`: no permanent user activity history.
+
+**How to clear it**
+
+- The “Nueva ayuda” button clears the goal and conversation and starts a fresh
+  session. It does not clear unrelated browser data.
 
 ## Data minimization and defence in depth
 
@@ -36,8 +75,24 @@ The backend constructs the prompt and calls the configured AI provider.
   `{ "value": "user secret here" }`.
 - We detect and exclude password fields, OTP fields, card-number/CVV fields,
   authorization tokens and session identifiers.
+- Conversation history can never bypass the sanitizer: page snapshots are never
+  stored in a turn, and user-typed secret values are redacted at write time.
 - This is **data minimization and defence in depth**, not a promise of perfect
   privacy.
+
+## Trusted inference boundary for this deployment
+
+This deployment is configured with **nan.builders** (`AI_BASE_URL`,
+`AI_MODEL=qwen3.6`) as the trusted inference boundary. Ordinary visible page
+context (mail subjects, headings, product info, headlines) may be sent to that
+backend when needed to answer the user's request, and no extra warning dialog is
+inserted before each request.
+
+This trust assumption is **specific to this deployment**. Do not assume that all
+possible deployment providers have identical privacy properties. Independent of
+the provider, the structural secret-safety invariants are preserved: passwords,
+OTP/MFA codes, card numbers, CVV, auth tokens, API keys, hidden secret fields
+and raw sensitive input values are never serialized or retained.
 
 ## Telemetry
 

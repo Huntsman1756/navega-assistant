@@ -5,11 +5,14 @@ file tracks the delivery phases and their current status.
 
 ## P0 — Product Validation (CURRENT: implemented)
 
-Minimal assistant: extension Side Panel, on-demand sanitized snapshot,
-backend, configurable provider, one simple instruction. No autonomous
-continuation, no highlight, no voice, no trusted contact.
+Minimal assistant: extension Side Panel, on-demand sanitized snapshot, a
+**bounded, ephemeral current-help-session conversation**, a per-origin
+permission UX, backend, configurable provider, one simple instruction. No
+autonomous continuation, no highlight, no voice, no trusted contact, no
+browsing history.
 
-**Goal:** gather directional evidence about DOM-derived sufficiency.
+**Goal:** gather directional evidence about DOM-derived sufficiency, including
+short conversational follow-ups and entry/access friction.
 
 ## P1 — Guided Highlight Prototype (NEXT)
 

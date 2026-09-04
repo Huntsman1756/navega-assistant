@@ -7,8 +7,16 @@ Test topology:
   - `packages/accessible-dom/src/*.test.ts`
   - `packages/security-policy/src/*.test.ts`
   - `packages/provider/src/*.test.ts`
-- **Integration + security** live in `apps/api/src/*.test.ts` (routes + security).
-- **Browser E2E** lives in `apps/extension/e2e/` (Playwright).
+- **Session / permission / conversation UI** live in the extension:
+  - `apps/extension/src/session/session.test.ts`
+  - `apps/extension/src/permissions/permissions.test.ts`
+  - `apps/extension/src/sidepanel/controller.test.ts`
+  - `apps/extension/src/service-worker/logic.test.ts`
+- **Integration + security** live in `apps/api/src/*.test.ts` (routes + security
+  + prompt regressions).
+- **Browser E2E** lives in `apps/extension/e2e/` (Playwright), including the
+  conversation vertical slice and the permission-denied/access-required
+  scenario.
 
 ## Fixtures
 

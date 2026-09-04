@@ -39,8 +39,21 @@ if (readdirSafe(resolve(root, "apps", "extension", "dist"))) {
   else ok("no 'debugger' permission");
 
   const hostPerms = manifest.host_permissions ?? [];
-  if (hostPerms.includes("<all_urls>")) fail("manifest requests <all_urls>");
-  else ok("no '<all_urls>' host permission");
+  if (hostPerms.includes("<all_urls>")) fail("manifest requests <all_urls> in REQUIRED host_permissions");
+  else ok("no permanent '<all_urls>' host permission");
+
+  // Broad optional host access is only acceptable when it is declared as an
+  // OPTIONAL capability (never granted by default) and used only for explicit
+  // per-origin user grants. It must never appear in the required list.
+  const optionalHostPerms = manifest.optional_host_permissions ?? [];
+  const hasBroadOptional = optionalHostPerms.some((p) => p === "<all_urls>" || p === "*://*/*");
+  if (hasBroadOptional) {
+    ok("broad optional host capability declared (not granted by default; per-origin only)");
+  } else if (optionalHostPerms.length > 0) {
+    ok(`optional host permissions present: ${optionalHostPerms.join(", ")}`);
+  } else {
+    ok("no optional host permissions declared");
+  }
 
   const jsFiles = collectFiles(resolve(root, "apps", "extension", "dist")).filter((f) => f.endsWith(".js"));
   const forbidden = ["AI_API_KEY", "AI_BASE_URL", "AI_MODEL", "sk-", "puppeteer", "playwright", "executeJavaScript", "chrome.debugger", "backendDOMNodeId"];

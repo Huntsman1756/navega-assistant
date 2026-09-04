@@ -29,6 +29,23 @@ const SECRET_TO_ME_PHRASE =
 const ES_SECRET_TERMS =
   /\b(contraseña|clave|código|pin|otp|cvv|cvc|tarjeta|seguridad|recuperación|verificación)\b/i;
 
+/**
+ * Heuristic that replaces a plausible inlined secret value with a neutral
+ * marker. A user may paste something like "mi contraseña es abc123" into the
+ * assistant question box; we must NOT retain the raw value in the help session.
+ * This is defence in depth (keyword-pattern based, not perfect) and is applied
+ * at write time, never after the fact.
+ */
+const SECRET_VALUE_RE =
+  /\b(?:contraseña|clave|password|passcode|passphrase|pin|otp|código|code|cvv|cvc|tarjeta|card number|recovery code|security code|verification code)\b[^.!?\n]{0,24}?\b(?:es|son|is|are|:|=)\b\s+([A-Za-z0-9_@#.*-]{4,})/gi;
+
+export const REDACTED_MARKER = "[redactado]";
+
+/** Redacts secret-looking values that follow a secret keyword. */
+export function redactSecretValues(text: string): string {
+  return text.replace(SECRET_VALUE_RE, (match) => match.replace(/\S+$/, `[${REDACTED_MARKER}]`));
+}
+
 const ES_ASK_TO_ME =
   /\b(dime|env[íi]ame|m[áa]ndame|dame|comp[áa]rteme|p[áa]same|escríbeme|facilítame|indícame)\b[^.!?]{0,50}\b(tu|la|el)\b[^.!?]{0,30}\b(contraseña|clave|código|pin|cvv|cvc|tarjeta)\b/i;
 
