@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>My account</title>
+  </head>
+  <body>
+    <h1>My account</h1>
+    <nav>
+      <button id="nav-profile">Profile</button>
+      <button id="nav-settings">Settings</button>
+    </nav>
+    <div id="content">Choose a section.</div>
+    <script>
+      document.getElementById("nav-profile").addEventListener("click", function () {
+        document.getElementById("content").innerHTML =
+          "<h2>Profile</h2><button>Save profile</button>";
+      });
+      document.getElementById("nav-settings").addEventListener("click", function () {
+        document.getElementById("content").innerHTML =
+          "<h2>Settings</h2><button>Save settings</button>";
+      });
+    </script>
+  </body>
+</html>
