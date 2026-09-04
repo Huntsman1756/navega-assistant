@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+out/
+coverage/
+*.tsbuildinfo
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local tooling
+/opencode.json
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Validation data - never commit real participant data
+docs/validation/data/
+docs/validation/sessions/
+docs/validation/**/results/
+tests/e2e/artifacts/
+playwright-report/
+test-results/
+
+# Generated extension artifacts
+apps/extension/dist/
