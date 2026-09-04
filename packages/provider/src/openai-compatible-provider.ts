@@ -67,7 +67,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       mode: request.mode,
       question: request.question,
       session: request.session,
-      snapshot: request.snapshot,
+      context: request.context,
     });
   }
 }

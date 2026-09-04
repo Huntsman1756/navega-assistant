@@ -3,7 +3,7 @@
 ## Setup
 - Operator controls the context mode per task: `DOM_ONLY` or `DOM_PLUS_VISION`.
 - Use the deterministic fixture pages in `tests/fixtures/` (fake data only).
-- The G1 artifact is `v0.0.4-p0-g1-baseline`. It holds a bounded, ephemeral
+- The G1 artifact is `v0.0.5-p0-g1-baseline`. It holds a bounded, ephemeral
   current help session (short follow-ups are possible) and a per-origin
   permission UX.
 - Sessions are recorded locally; nothing is uploaded in P0.

@@ -1,4 +1,14 @@
 import type { AIProvider, AssistModelRequest, AssistModelResponse } from "./types";
+import type { AccessibleDOMSnapshot, PageContext } from "@guided-web/protocol";
+
+function flattenFrameSnapshots(context: PageContext): AccessibleDOMSnapshot[] {
+  const top = context.frames.find((f) => f.frameId === context.topFrameId);
+  const rest = context.frames.filter((f) => f.frameId !== context.topFrameId);
+  const ordered = top ? [top, ...rest] : [...context.frames];
+  return ordered
+    .filter((f) => f.accessible && f.snapshot)
+    .map((f) => f.snapshot as AccessibleDOMSnapshot);
+}
 
 /**
  * Deterministic provider that requires no external AI access.
@@ -20,7 +30,7 @@ export class MockProvider implements AIProvider {
     message: string;
     reason?: string;
   } {
-    const { snapshot, session } = request;
+    const { context, session } = request;
 
     // Deterministic continuity signal: when there is prior conversation the
     // mock acknowledges the current help task, so automated tests can verify the
@@ -28,12 +38,20 @@ export class MockProvider implements AIProvider {
     const hasContext = !!session && Array.isArray(session.turns) && session.turns.length > 0;
     const prefix = hasContext ? "Sigamos. " : "";
 
-    const firstActionable = snapshot.elements.find(
-      (el) =>
-        el.interactive &&
-        (el.role === "button" || el.tag.toLowerCase() === "button") &&
-        el.accessibleName,
-    );
+    // The CURRENT PAGE is a bounded set of frame contexts. The top frame is the
+    // user-facing page; child frames are independent contexts that must never be
+    // merged into the parent. We search them in frame order (top first).
+    const snapshots = flattenFrameSnapshots(context);
+
+    const firstActionable = snapshots
+      .map((s) => s.elements)
+      .flat()
+      .find(
+        (el) =>
+          el.interactive &&
+          (el.role === "button" || el.tag.toLowerCase() === "button") &&
+          el.accessibleName,
+      );
 
     if (firstActionable?.accessibleName) {
       return {
@@ -42,9 +60,12 @@ export class MockProvider implements AIProvider {
       };
     }
 
-    const hasPassword = snapshot.elements.some(
-      (el) => el.role === "textbox" && (el.state?.empty === false || el.state?.empty === true),
-    );
+    const hasPassword = snapshots
+      .map((s) => s.elements)
+      .flat()
+      .some(
+        (el) => el.role === "textbox" && (el.state?.empty === false || el.state?.empty === true),
+      );
 
     if (hasPassword) {
       return {

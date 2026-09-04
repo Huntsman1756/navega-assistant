@@ -6,8 +6,9 @@
  * unit-tested with a fake. It manages a small bounded conversation, drives
  * per-origin permission UX, and never performs any autonomous browser action.
  */
-import type { AccessibleDOMSnapshot, HelpSession, HelpTurn } from "@guided-web/protocol";
+import type { AccessibleDOMSnapshot, HelpSession, HelpTurn, PageContext } from "@guided-web/protocol";
 import type { AssistResultMessage } from "../shared/messages";
+import { buildPageContext, type FrameInput } from "@guided-web/accessible-dom";
 import {
   appendTurn,
   resetSession,
@@ -33,9 +34,9 @@ export class UnsupportedPageError extends Error {
 /** Minimal chrome surface the controller needs. Injected for testability. */
 export interface ChromeFacade {
   getActiveTab(): Promise<{ id?: number; url?: string } | null>;
-  captureSnapshot(tabId: number): Promise<AccessibleDOMSnapshot>;
+  capturePageContext(tabId: number): Promise<PageContext>;
   sendAssist(req: {
-    snapshot: AccessibleDOMSnapshot;
+    context: PageContext;
     question: string;
     session: HelpSession;
   }): Promise<AssistResultMessage>;
@@ -133,13 +134,13 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
     els.permission.hidden = true;
   }
 
-  async function captureWithPermission(tabId: number, url: string): Promise<AccessibleDOMSnapshot> {
+  async function captureWithPermission(tabId: number, url: string): Promise<PageContext> {
     const kind = classifyPage(url);
     if (kind !== "supported") {
       throw new UnsupportedPageError(kind);
     }
     try {
-      return await facade.captureSnapshot(tabId);
+      return await facade.capturePageContext(tabId);
     } catch (err) {
       const pattern = originMatchPattern(url);
       const granted = await facade.hasPermission(pattern).catch(() => false);
@@ -171,15 +172,15 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
       }
       const url = tab.url ?? "";
       setStatus("Analizando esta página…");
-      const snapshot = await captureWithPermission(tab.id, url);
+      const context = await captureWithPermission(tab.id, url);
 
-      const sWithOrigin = setCurrentOrigin(s, snapshot.page.origin);
+      const sWithOrigin = setCurrentOrigin(s, pageContextOrigin(context));
       session = sWithOrigin;
 
       setStatus("Preguntando al asistente…");
       // The current question is NOT in history yet; it is the "current intent".
       const result = await facade.sendAssist({
-        snapshot,
+        context,
         question: text,
         session: sWithOrigin,
       });
@@ -283,6 +284,21 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
   };
 }
 
+/** The origin of the top-level (main) frame, or "" if unknown. */
+export function pageContextOrigin(context: PageContext): string {
+  const top = context.frames.find((f) => f.frameId === context.topFrameId);
+  const candidate = top ?? context.frames[0];
+  return candidate?.origin ?? candidate?.snapshot?.page.origin ?? "";
+}
+
+function originOf(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return "";
+  }
+}
+
 /** Build a chrome-backed facade used by the real side panel entry. */
 export function createChromeFacade(cc: typeof chrome): ChromeFacade {
   const SNAPSHOT_MESSAGE = "GWA_SNAPSHOT";
@@ -292,32 +308,100 @@ export function createChromeFacade(cc: typeof chrome): ChromeFacade {
       const [tab] = await cc.tabs.query({ active: true, currentWindow: true });
       return tab ? { id: tab.id, url: tab.url } : null;
     },
-    captureSnapshot: (tabId: number) =>
-      new Promise<AccessibleDOMSnapshot>((resolve, reject) => {
+    capturePageContext: (tabId: number) =>
+      new Promise<PageContext>((resolve, reject) => {
         let settled = false;
-        const timeout = setTimeout(() => {
-          close();
-          reject(new Error("snapshot timeout"));
-        }, SNAPSHOT_TIMEOUT_MS);
-        const onMessage = (message: unknown) => {
-          const msg = message as { type?: string; snapshot?: AccessibleDOMSnapshot } | undefined;
-          if (msg?.type === SNAPSHOT_MESSAGE && msg.snapshot && !settled) {
-            settled = true;
-            close();
-            resolve(msg.snapshot);
-          }
-        };
+        const collected = new Map<number, { frameId: number; origin: string; snapshot: AccessibleDOMSnapshot }>();
+        let knownFrames: Array<{ frameId: number; parentFrameId: number; url: string }> = [];
+
         const close = () => {
           clearTimeout(timeout);
           cc.runtime.onMessage.removeListener(onMessage);
         };
-        cc.runtime.onMessage.addListener(onMessage);
-        cc.scripting.executeScript({ target: { tabId }, files: ["content/extract.js"] }).catch((err: unknown) => {
+
+        const finish = () => {
           if (settled) return;
           settled = true;
           close();
-          reject(err);
-        });
+          const inputs: FrameInput[] = [];
+          if (knownFrames.length > 0) {
+            for (const f of knownFrames) {
+              const got = collected.get(f.frameId);
+              if (got) {
+                inputs.push({
+                  frameId: f.frameId,
+                  parentFrameId: f.parentFrameId,
+                  origin: got.origin,
+                  accessible: true,
+                  snapshot: got.snapshot,
+                });
+              } else {
+                // A frame we know about but could not read (e.g. cross-origin):
+                // represent it explicitly as unavailable, never as empty.
+                inputs.push({
+                  frameId: f.frameId,
+                  parentFrameId: f.parentFrameId,
+                  origin: originOf(f.url),
+                  accessible: false,
+                  unavailableReason: "cross_origin_unavailable",
+                });
+              }
+            }
+          } else {
+            for (const [frameId, got] of collected) {
+              inputs.push({ frameId, origin: got.origin, accessible: true, snapshot: got.snapshot });
+            }
+          }
+          if (inputs.length === 0) {
+            reject(new Error("no frame data captured"));
+            return;
+          }
+          const topFrameId = knownFrames.find((f) => f.parentFrameId === -1)?.frameId ?? 0;
+          // If the top-level frame itself cannot be read we cannot help at all:
+          // surface the permission/access error rather than pretending the page
+          // is empty. Inaccessible CHILD frames are tolerated and represented
+          // explicitly as unavailable.
+          const top = inputs.find((i) => i.frameId === topFrameId) ?? inputs[0];
+          if (!top?.accessible) {
+            reject(new Error("top frame unavailable"));
+            return;
+          }
+          resolve(buildPageContext(topFrameId, inputs));
+        };
+
+        const timeout = setTimeout(finish, SNAPSHOT_TIMEOUT_MS);
+
+        const onMessage = (message: unknown, sender: chrome.runtime.MessageSender) => {
+          const msg = message as { type?: string; snapshot?: AccessibleDOMSnapshot } | undefined;
+          if (msg?.type === SNAPSHOT_MESSAGE && msg.snapshot) {
+            const frameId = sender?.frameId ?? 0;
+            collected.set(frameId, {
+              frameId,
+              origin: sender?.origin ?? originOf(sender?.url ?? ""),
+              snapshot: msg.snapshot,
+            });
+          }
+        };
+        cc.runtime.onMessage.addListener(onMessage);
+
+        void (async () => {
+          // Enumerate the frame tree (best effort; not all contexts report).
+          if (cc.webNavigation?.getAllFrames) {
+            try {
+              knownFrames = (await cc.webNavigation.getAllFrames({ tabId })) ?? [];
+            } catch {
+              knownFrames = [];
+            }
+          }
+          try {
+            // Inject the extractor into every context the extension can reach.
+            await cc.scripting.executeScript({ target: { tabId, allFrames: true }, files: ["content/extract.js"] });
+          } catch {
+            // Some frames may be unreachable; we still assemble below.
+          }
+          // Give frame messages a moment to arrive before assembling.
+          setTimeout(finish, 250);
+        })();
       }),
     sendAssist: (req) =>
       cc.runtime.sendMessage({ type: "GWA_ASSIST", ...req }) as Promise<AssistResultMessage>,

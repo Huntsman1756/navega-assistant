@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createApp } from "./routes";
 import { MockProvider, type AIProvider } from "@guided-web/provider";
-import type { AccessibleDOMSnapshot } from "@guided-web/protocol";
+import type { AccessibleDOMSnapshot, PageContext } from "@guided-web/protocol";
 
 const maliciousSnapshot: AccessibleDOMSnapshot = {
   schemaVersion: 1,
@@ -16,15 +16,29 @@ const maliciousSnapshot: AccessibleDOMSnapshot = {
   ],
 };
 
-function request(snapshot: AccessibleDOMSnapshot) {
+const maliciousContext: PageContext = {
+  schemaVersion: 1,
+  topFrameId: 0,
+  frames: [
+    {
+      frameId: 0,
+      parentFrameId: -1,
+      origin: "https://evil.example",
+      accessible: true,
+      snapshot: maliciousSnapshot,
+    },
+  ],
+};
+
+function request(context: PageContext) {
   return {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      protocolVersion: 2,
+      protocolVersion: 3,
       mode: "DOM_ONLY",
       question: "I don't know what to do here.",
-      snapshot,
+      context,
       session: { schemaVersion: 1, sessionId: "s-mal", turns: [] },
     }),
   } as const;
@@ -42,7 +56,7 @@ describe("prompt-injection / unsafe guidance", () => {
       },
     };
     const app = createApp(unsafeProvider, "malicious", "m");
-    const res = await app.request("/v1/assist", request(maliciousSnapshot));
+    const res = await app.request("/v1/assist", request(maliciousContext));
     expect(res.status).toBe(200);
     const json = (await res.json()) as { decision: { message: string } };
     const text = json.decision.message.toLowerCase();
@@ -59,7 +73,7 @@ describe("prompt-injection / unsafe guidance", () => {
       },
     };
     const app = createApp(badKindProvider, "bad", "m");
-    const res = await app.request("/v1/assist", request(maliciousSnapshot));
+    const res = await app.request("/v1/assist", request(maliciousContext));
     expect(res.status).toBe(502);
   });
 
@@ -74,21 +88,21 @@ describe("prompt-injection / unsafe guidance", () => {
       },
     };
     const app = createApp(extraFieldProvider, "bad", "m");
-    const res = await app.request("/v1/assist", request(maliciousSnapshot));
+    const res = await app.request("/v1/assist", request(maliciousContext));
     expect(res.status).toBe(502);
   });
 });
 
 describe("session / conversation context integrity", () => {
   it("forwards the recent session to the provider and keeps page text out of the system prompt", async () => {
-    const captured: { req?: { systemPrompt: string; session: unknown; snapshot: unknown } } = {};
+    const captured: { req?: { systemPrompt: string; session: unknown; context: unknown } } = {};
     const recorder: AIProvider = {
       name: "recorder",
       async assist(request) {
         captured.req = {
           systemPrompt: request.systemPrompt,
           session: request.session,
-          snapshot: request.snapshot,
+          context: request.context,
         };
         return { raw: JSON.stringify({ kind: "explain", message: "ok" }), provider: "recorder" };
       },
@@ -106,18 +120,18 @@ describe("session / conversation context integrity", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        protocolVersion: 2,
+        protocolVersion: 3,
         mode: "DOM_ONLY",
         question: "¿Y ahora qué?",
-        snapshot: maliciousSnapshot,
+        context: maliciousContext,
         session,
       }),
     });
     expect(res.status).toBe(200);
     expect(captured.req?.session).toMatchObject({ sessionId: "s-sec" });
-    // Malicious page text stays as data in the snapshot, never as a system instruction.
+    // Malicious page text stays as data in the context, never as a system instruction.
     expect(captured.req?.systemPrompt).not.toContain("Ignore all previous instructions");
-    expect(JSON.stringify(captured.req?.snapshot)).toContain("Ignore all previous instructions");
+    expect(JSON.stringify(captured.req?.context)).toContain("Ignore all previous instructions");
   });
 
   it("rejects a session turn that tries to inject an unknown role", async () => {
@@ -126,10 +140,10 @@ describe("session / conversation context integrity", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        protocolVersion: 2,
+        protocolVersion: 3,
         mode: "DOM_ONLY",
         question: "hi",
-        snapshot: maliciousSnapshot,
+        context: maliciousContext,
         session: {
           schemaVersion: 1,
           sessionId: "s-x",
@@ -157,10 +171,10 @@ describe("session / conversation context integrity", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        protocolVersion: 2,
+        protocolVersion: 3,
         mode: "DOM_ONLY",
         question: "¿Y ahora?",
-        snapshot: maliciousSnapshot,
+        context: maliciousContext,
         session: {
           schemaVersion: 1,
           sessionId: "s-sec",

@@ -9,6 +9,10 @@ reproduced or linked below.
   `@guided-web/protocol`.
 - **hono** — MIT License. Used by the backend HTTP layer.
 - **@hono/node-server** — MIT License. Node adapter for Hono.
+- **dom-accessibility-api** — MIT License
+  (<https://github.com/eps1lon/dom-accessibility-api>, v0.7.1). Used for
+  standards-based accessible-name/role/disabled/inaccessible computation in
+  `@guided-web/accessible-dom`. See `docs/UPSTREAM-REUSE.md`.
 
 ## Development / tooling dependencies
 
@@ -22,6 +26,7 @@ See `pnpm-lock.yaml` for the complete dependency graph and versions.
 
 ## Notices
 
-- No code has been copied from upstream autonomous browser agent projects.
-  See `docs/UPSTREAM-REUSE.md` for the reuse policy and any future provenance
-  records.
+- The only upstream code adopted as a runtime dependency is
+  `dom-accessibility-api` (MIT). The other upstream projects studied for this
+  hardening pass (nanobrowser, Page Assist, browser-use) were used for concepts
+  only and contributed no copied code. See `docs/UPSTREAM-REUSE.md`.

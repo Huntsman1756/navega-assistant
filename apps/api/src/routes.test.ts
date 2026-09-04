@@ -1,14 +1,26 @@
 import { describe, it, expect } from "vitest";
 import { MockProvider } from "@guided-web/provider";
 import { createApp } from "./routes";
-import type { AccessibleDOMSnapshot } from "@guided-web/protocol";
+import type { PageContext } from "@guided-web/protocol";
 
-const snapshot: AccessibleDOMSnapshot = {
+const context: PageContext = {
   schemaVersion: 1,
-  snapshotId: "snap-1",
-  page: { url: "https://example.com/login", origin: "https://example.com", title: "Sign in" },
-  elements: [
-    { id: "el-0", tag: "button", role: "button", accessibleName: "Sign in", interactive: true },
+  topFrameId: 0,
+  frames: [
+    {
+      frameId: 0,
+      parentFrameId: -1,
+      origin: "https://example.com",
+      accessible: true,
+      snapshot: {
+        schemaVersion: 1,
+        snapshotId: "snap-1",
+        page: { url: "https://example.com/login", origin: "https://example.com", title: "Sign in" },
+        elements: [
+          { id: "el-0", tag: "button", role: "button", accessibleName: "Sign in", interactive: true },
+        ],
+      },
+    },
   ],
 };
 
@@ -34,10 +46,10 @@ describe("POST /v1/assist", () => {
 
   it("returns a valid explain decision using the mock provider", async () => {
     const r = await post({
-      protocolVersion: 2,
+      protocolVersion: 3,
       mode: "DOM_ONLY",
       question: "I don't know what to do here.",
-      snapshot,
+      context,
       session: emptySession,
     });
     expect(r.status).toBe(200);
@@ -46,12 +58,28 @@ describe("POST /v1/assist", () => {
     expect(r.json.provider).toBe("mock");
   });
 
-  it("rejects a snapshot that would carry a value field", async () => {
+  it("rejects a frame snapshot that would carry a value field", async () => {
     const bad = {
-      protocolVersion: 2,
+      protocolVersion: 3,
       mode: "DOM_ONLY",
       question: "hi",
-      snapshot: { ...snapshot, elements: [{ id: "x", tag: "input", role: "textbox", value: "s3cret" }] },
+      context: {
+        ...context,
+        frames: [
+          {
+            frameId: 0,
+            parentFrameId: -1,
+            origin: "https://example.com",
+            accessible: true,
+            snapshot: {
+              schemaVersion: 1,
+              snapshotId: "x",
+              page: { url: "https://example.com/login", origin: "https://example.com", title: "x" },
+              elements: [{ id: "x", tag: "input", role: "textbox", value: "s3cret" }],
+            },
+          },
+        ],
+      },
       session: emptySession,
     };
     const r = await post(bad);

@@ -26,7 +26,7 @@ async function getBackendUrl(): Promise<string> {
 
 async function handleAssist(msg: AssistMessage): Promise<AssistResultMessage> {
   const baseUrl = await getBackendUrl();
-  return requestAssist(baseUrl, msg.snapshot, msg.question, msg.session);
+  return requestAssist(baseUrl, msg.context, msg.question, msg.session);
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

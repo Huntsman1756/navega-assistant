@@ -24,7 +24,7 @@ function collectFiles(dir) {
 }
 
 const MANIFEST = resolve(root, "apps", "extension", "dist", "manifest.json");
-const ALLOWED_PERMISSIONS = new Set(["activeTab", "scripting", "storage", "sidePanel"]);
+const ALLOWED_PERMISSIONS = new Set(["activeTab", "scripting", "storage", "sidePanel", "webNavigation"]);
 
 console.log("Security checks: extension bundle");
 

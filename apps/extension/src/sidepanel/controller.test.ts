@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach } from "vitest";
 import { createController, type ControllerElements, type ChromeFacade } from "./controller";
-import type { AccessibleDOMSnapshot, HelpSession } from "@guided-web/protocol";
+import type { AccessibleDOMSnapshot, HelpSession, PageContext } from "@guided-web/protocol";
 import type { AssistResultMessage } from "../shared/messages";
 
 function snapshotFor(url: string, name: string): AccessibleDOMSnapshot {
@@ -11,6 +11,15 @@ function snapshotFor(url: string, name: string): AccessibleDOMSnapshot {
     page: { url, origin: new URL(url).origin, title: name },
     elements: [{ id: "el-0", tag: "button", role: "button", accessibleName: name, interactive: true }],
     visibleText: [],
+  };
+}
+
+function contextFor(url: string, name: string): PageContext {
+  const snap = snapshotFor(url, name);
+  return {
+    schemaVersion: 1,
+    topFrameId: 0,
+    frames: [{ frameId: 0, parentFrameId: -1, origin: snap.page.origin, accessible: true, snapshot: snap }],
   };
 }
 
@@ -24,7 +33,7 @@ function errResult(error: string): AssistResultMessage {
 
 interface FacadeOptions {
   tab?: { id?: number; url?: string } | null;
-  snapshot?: AccessibleDOMSnapshot;
+  context?: PageContext;
   captureError?: unknown;
   hasPermission?: boolean;
   requestPermission?: boolean;
@@ -41,10 +50,10 @@ function makeFacade(opts: FacadeOptions = {}) {
 
   const facade: ChromeFacade = {
     getActiveTab: async () => (opts.tab === undefined ? { id: 1, url: "https://example.com/login" } : opts.tab),
-    captureSnapshot: async () => {
+    capturePageContext: async () => {
       calls.capture += 1;
       if (opts.captureError !== undefined) throw opts.captureError;
-      return opts.snapshot ?? snapshotFor("https://example.com/login", "Sign in");
+      return opts.context ?? contextFor("https://example.com/login", "Sign in");
     },
     sendAssist: async (req) => {
       calls.assist += 1;
@@ -222,7 +231,7 @@ describe("permission UX", () => {
   it("shows a permission prompt instead of an opaque technical error", async () => {
     const { facade } = makeFacade({
       tab: { id: 1, url: "https://mail.google.com/mail" },
-      snapshot: snapshotFor("https://mail.google.com/mail", "Recibidos"),
+      context: contextFor("https://mail.google.com/mail", "Recibidos"),
       captureError: new Error("Cannot access contents of the page. Extension manifest must request permission to access the respective host."),
       hasPermission: false,
     });
@@ -238,17 +247,17 @@ describe("permission UX", () => {
     let throwFirst = true;
     const { facade, calls } = makeFacade({
       tab: { id: 1, url: "https://mail.google.com/mail" },
-      snapshot: snapshotFor("https://mail.google.com/mail", "Recibidos"),
+      context: contextFor("https://mail.google.com/mail", "Recibidos"),
       hasPermission: false,
       requestPermission: true,
     });
-    facade.captureSnapshot = async () => {
+    facade.capturePageContext = async () => {
       calls.capture += 1;
       if (throwFirst) {
         throwFirst = false;
         throw new Error("host permission denied");
       }
-      return snapshotFor("https://mail.google.com/mail", "Recibidos");
+      return contextFor("https://mail.google.com/mail", "Recibidos");
     };
     const els = buildElements();
     const c = createController(facade, els);
@@ -262,7 +271,7 @@ describe("permission UX", () => {
   it("denying permission degrades cleanly", async () => {
     const { facade } = makeFacade({
       tab: { id: 1, url: "https://mail.google.com/mail" },
-      snapshot: snapshotFor("https://mail.google.com/mail", "Recibidos"),
+      context: contextFor("https://mail.google.com/mail", "Recibidos"),
       captureError: new Error("host permission denied"),
       hasPermission: false,
     });

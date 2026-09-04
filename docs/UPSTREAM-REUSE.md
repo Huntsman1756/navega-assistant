@@ -10,36 +10,66 @@ Unless recorded in `THIRD_PARTY_NOTICES.md`, code in this repository is
 original to this project. Anything adapted from upstream MUST be recorded here
 with the exact repository, license, compatibility note and attribution.
 
-## Candidate upstreams (studied; not imported wholesale)
-
-### nanobrowser
-- Could study/adapt: Manifest V3 patterns, extension messaging, Side Panel
-  architecture, frame-routing lessons, iframe-related failure handling.
-- **Do NOT import:** planners, autonomous agents, executors, autonomous browser
-  actions, multi-agent infrastructure.
-
-### browser-use
-- Study: interactive-element filtering, visibility heuristics, DOM
-  representation, accessibility-oriented representation, Shadow DOM concepts.
-- **Do NOT port runtime architecture** that depends on CDP, Playwright,
-  Puppeteer, browser automation, `backendDOMNodeId`, or autonomous action
-  execution.
-- Playwright is allowed as a **test tool** only; it is not a runtime dependency.
+## Adopted / direct dependency
 
 ### dom-accessibility-api
-- Evaluate as a possible direct dependency for accessible-name/description
-  calculation and DOM accessibility semantics.
-- **Status:** not yet adopted. P0 implements a light, built-in accessible-name
-  heuristic. A known limitation: it is less accurate than a specialized library
-  for complex/ARIA widgets. Adoption is an open decision.
+- **Repository:** <https://github.com/eps1lon/dom-accessibility-api>
+- **License:** MIT
+- **Inspected revision:** tag `v0.7.1` (npm release 0.7.1; default branch commit
+  `a1828981f407b6cd6dc9d7b1046a618af93d0270`).
+- **Status:** direct runtime dependency of `@guided-web/accessible-dom`.
+- **Reused directly:** `computeAccessibleName`, `getRole`, `isInaccessible`,
+  `isDisabled`.
+- **What was NOT reused:** none of its test suite, build tooling, or any
+  autonomous-agent infrastructure (it has none). Only the standard, published
+  API functions are imported.
+- **Compatibility / security note:** `getRole` returns `null` for
+  `<input type="password">`; we add a minimal role fallback (`textbox`) for that
+  narrow compatibility gap. The accessible-name calculation never reads an
+  input's live value, so it cannot leak a password/OTP/card value; the sanitizer
+  in `packages/accessible-dom/src/sanitizer.ts` remains the authoritative
+  data-leak boundary and is applied across the top document, frames and shadow
+  roots.
 
-### Overlay / highlighter projects
-- Study overlay geometry, isolation, scrolling, resizing, Shadow DOM
-  encapsulation. Do not blindly copy.
+## Studied for concepts only (not imported)
 
-### Accessibility Insights
-- Use as an accessibility reference and QA/architecture inspiration. Not a
-  runtime dependency unless there is a clear justified reason.
+### nanobrowser
+- **Repository:** <https://github.com/nanobrowser/nanobrowser>
+- **License:** Apache-2.0
+- **Inspected revision:** default branch commit
+  `24a14b76e14a9c30fd84878ca7985049d1e7d064`.
+- **Studied:** open Shadow DOM traversal patterns, frame/root boundaries,
+  iframe failure handling, compact DOM representation, visibility/interactivity
+  concepts.
+- **Reused:** design/reference only. We did not copy code; we re-implemented
+  root-aware traversal and frame representation in our own MV3 content-script
+  boundary.
+- **Not reused:** planner, navigator, executor, autonomous actions,
+  debugger/CDP runtime, Playwright runtime, multi-agent architecture, arbitrary
+  model-selected selectors.
+
+### Page Assist
+- **Repository:** <https://github.com/n4ze3m/page-assist>
+- **License:** MIT
+- **Inspected revision:** default branch commit
+  `7a5bc71ce7a9fcb736dcce471cef5aea10d7faad`.
+- **Studied:** page-context budgeting, context truncation, content
+  prioritization.
+- **Reused:** concept only — deterministic relevance ranking and explicit
+  context budgets.
+- **Not reused:** the broad permanent host-permission model, side-panel
+  extraction details, any extension host that requests `<all_urls>`.
+
+### browser-use
+- **Repository:** <https://github.com/browser-use/browser-use>
+- **License:** MIT
+- **Inspected revision:** default branch commit
+  `fe5ad353091fa2ed5499b94e8fe21094bc2e9e5a`.
+- **Studied:** interactive-element relevance, visibility heuristics, element
+  prioritization, DOM simplification.
+- **Reused:** concept only (deterministic relevance before truncation).
+- **Not reused / not ported:** Python/CDP/Playwright/Puppeteer automation
+  runtime, `backendDOMNodeId`, autonomous action execution, browser control.
 
 ## Code provenance procedure
 

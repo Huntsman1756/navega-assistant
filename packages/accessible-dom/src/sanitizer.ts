@@ -54,3 +54,24 @@ export function isHidden(el: Element): boolean {
   }
   return false;
 }
+
+/**
+ * Extra defensive redaction applied to the *accessible name* of a classified
+ * secret field. Accessible-name calculation never reads an input's live value,
+ * but we still strip digit runs that could look like a card/OTP/verification
+ * code so no plausible secret can slip through as a name or placeholder. This
+ * is layered on top of the fact that the sanitizer is the authoritative
+ * boundary and the snapshot schema does not even allow a `value` field.
+ */
+export function redactSensitiveRuns(text: string, kind: SecretFieldKind): string {
+  if (!text) return text;
+  if (kind === "card") {
+    return text
+      .replace(/\b\d{13,19}\b/g, "[redactado]")
+      .replace(/\b\d{4}([ -]?\d{4}){2,}\b/g, "[redactado]");
+  }
+  if (kind === "otp" || kind === "password") {
+    return text.replace(/\b\d{4,8}\b/g, "[redactado]");
+  }
+  return text;
+}

@@ -1,0 +1,22 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Widget combinado</title>
+  </head>
+  <body>
+    <h1>Cuenta avanzada</h1>
+    <p>Controles dentro de shadow roots, tanto en la página principal como en un iframe.</p>
+    <div id="top-widget"></div>
+    <button id="top-submit" type="button">Enviar</button>
+    <iframe id="combined-frame" src="/iframe-shadow-child.html" width="400" height="300"></iframe>
+    <script>
+      var host = document.getElementById("top-widget");
+      var shadow = host.attachShadow({ mode: "open" });
+      shadow.innerHTML =
+        "<label for=\"pn\">Nombre del proyecto</label>" +
+        "<input id=\"pn\" type=\"text\">" +
+        "<button id=\"shadow-save\" aria-label=\"Guardar proyecto\">Guardar</button>";
+    </script>
+  </body>
+</html>

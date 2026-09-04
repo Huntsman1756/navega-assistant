@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Shadow Widget</title>
+  </head>
+  <body>
+    <h1>Cuenta</h1>
+    <p>El siguiente control vive dentro de un shadow root abierto.</p>
+    <div id="widget-host"></div>
+    <script>
+      var host = document.getElementById("widget-host");
+      var shadow = host.attachShadow({ mode: "open" });
+      shadow.innerHTML =
+        "<span id=\"lbl\">Buscar</span>" +
+        "<input id=\"search\" aria-labelledby=\"lbl\" type=\"text\" placeholder=\"Buscar…\">" +
+        "<button id=\"go\" aria-label=\"Enviar consulta\">Aceptar</button>" +
+        "<input id=\"secret\" type=\"password\" value=\"shadow-secret-1234\">";
+    </script>
+  </body>
+</html>

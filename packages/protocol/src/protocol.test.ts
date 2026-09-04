@@ -8,6 +8,8 @@ import {
   GuidanceActionSchema,
   HelpSessionSchema,
   HelpTurnSchema,
+  FrameSnapshotSchema,
+  PageContextSchema,
 } from "./index";
 
 const validSnapshot = {
@@ -15,6 +17,20 @@ const validSnapshot = {
   snapshotId: "snap-1",
   page: { url: "https://example.com", origin: "https://example.com", title: "Sign in" },
   elements: [{ id: "el-0", tag: "button", role: "button", accessibleName: "Sign in", interactive: true }],
+};
+
+const validContext = {
+  schemaVersion: 1,
+  topFrameId: 0,
+  frames: [
+    {
+      frameId: 0,
+      parentFrameId: -1,
+      origin: "https://example.com",
+      accessible: true,
+      snapshot: validSnapshot,
+    },
+  ],
 };
 
 describe("P0AssistantDecisionSchema", () => {
@@ -50,6 +66,40 @@ describe("AccessibleDOMSnapshotSchema", () => {
   });
 });
 
+describe("FrameSnapshotSchema", () => {
+  it("accepts an accessible frame with a snapshot", () => {
+    expect(FrameSnapshotSchema.safeParse(validContext.frames[0]).success).toBe(true);
+  });
+
+  it("accepts an inaccessible frame with a reason and no snapshot", () => {
+    const frame = { frameId: 5, parentFrameId: 0, accessible: false, unavailableReason: "cross_origin_unavailable" };
+    expect(FrameSnapshotSchema.safeParse(frame).success).toBe(true);
+  });
+
+  it("rejects unknown fields (strict)", () => {
+    expect(FrameSnapshotSchema.safeParse({ frameId: 0, accessible: true, extra: 1 }).success).toBe(false);
+  });
+});
+
+describe("PageContextSchema", () => {
+  it("accepts a valid page context", () => {
+    expect(PageContextSchema.safeParse(validContext).success).toBe(true);
+  });
+
+  it("rejects an accessible frame that carries no snapshot", () => {
+    const bad = {
+      schemaVersion: 1,
+      topFrameId: 0,
+      frames: [{ frameId: 5, accessible: true }],
+    };
+    expect(PageContextSchema.safeParse(bad).success).toBe(false);
+  });
+
+  it("rejects unknown fields", () => {
+    expect(PageContextSchema.safeParse({ ...validContext, extra: true }).success).toBe(false);
+  });
+});
+
 describe("HelpTurnSchema", () => {
   it("accepts a valid user turn", () => {
     expect(HelpTurnSchema.safeParse({ role: "user", text: "hola", timestamp: 1 }).success).toBe(true);
@@ -77,10 +127,10 @@ describe("AssistRequestSchema", () => {
 
   it("accepts a valid request with a session", () => {
     const r = AssistRequestSchema.safeParse({
-      protocolVersion: 2,
+      protocolVersion: 3,
       mode: "DOM_ONLY",
       question: "What do I do?",
-      snapshot: validSnapshot,
+      context: validContext,
       session: emptySession,
     });
     expect(r.success).toBe(true);
@@ -88,20 +138,20 @@ describe("AssistRequestSchema", () => {
 
   it("rejects a request missing the session field", () => {
     const r = AssistRequestSchema.safeParse({
-      protocolVersion: 2,
+      protocolVersion: 3,
       mode: "DOM_ONLY",
       question: "What do I do?",
-      snapshot: validSnapshot,
+      context: validContext,
     });
     expect(r.success).toBe(false);
   });
 
   it("rejects unknown fields", () => {
     const r = AssistRequestSchema.safeParse({
-      protocolVersion: 2,
+      protocolVersion: 3,
       mode: "DOM_ONLY",
       question: "What do I do?",
-      snapshot: validSnapshot,
+      context: validContext,
       session: emptySession,
       unexpected: true,
     });
@@ -110,10 +160,10 @@ describe("AssistRequestSchema", () => {
 
   it("rejects a bad mode", () => {
     const r = AssistRequestSchema.safeParse({
-      protocolVersion: 2,
+      protocolVersion: 3,
       mode: "AUTOPILOT",
       question: "x",
-      snapshot: validSnapshot,
+      context: validContext,
       session: emptySession,
     });
     expect(r.success).toBe(false);

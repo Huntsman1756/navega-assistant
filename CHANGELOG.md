@@ -4,6 +4,57 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.0.5-p0-g1-baseline] - 2026-09-04
+
+### Status
+- New pre-G1 validation baseline. **This** is the exact artifact used in human
+  validation. It hardens the DOM-extraction infrastructure (commodity
+  infrastructure only — no new product concepts). The previous
+  `v0.0.4-p0-g1-baseline` baseline remains immutable.
+
+### Added / hardened
+- **Standards-based accessible semantics**: `dom-accessibility-api` (MIT, v0.7.1)
+  is now a direct runtime dependency; accessible names, roles, disabled state
+  and (in)visibility use the W3C accname / ARIA semantics instead of hand-rolled
+  heuristics. A minimal role fallback covers the `getRole` gap for
+  `input[type=password]`.
+- **Open Shadow DOM traversal**: root-aware traversal descends into every OPEN
+  ShadowRoot (including nested ones) with deterministic ordering and no element
+  duplication. CLOSED shadow roots are never bypassed; their contents remain
+  UNAVAILABLE_TO_DOM. The same sanitization and accessible semantics apply
+  inside shadow roots.
+- **Frame-aware extraction**: the current page is now a bounded, versioned
+  `PageContext` (`FrameSnapshot` per frame). The top frame is always
+  distinguishable; same-origin frames are independent contexts; an inaccessible
+  cross-origin frame is represented explicitly as unavailable (never empty), and
+  cannot break the whole page. Frame origin stays explicit; frames are never
+  merged. Protocol version bumped to `3` and request now carries `context`.
+- **Deterministic relevance / context budgeting**: candidates are ranked by
+  browser/page semantics (focused > alert/error/dialog > visible interactive >
+  form fields > stateful > landmarks/headings > navigation > boilerplate)
+  BEFORE truncation, with duplicate-boilerplate suppression. Explicit budgets:
+  per-snapshot elements, visible text, total characters, and total frames.
+- **Prompt**: updated to describe the fresh, frame-aware page representation,
+  treat inaccessible frames as unavailable (not empty), forbid inventing
+  controls, and keep page content as untrusted data. One physical action per
+  turn remains.
+- **New deterministic fixtures**: `long.html` (noisy/long), `shadow.html`
+  (open Shadow DOM), `iframe.html` + `iframe-child.html`, `iframe-shadow.html`
+  + `iframe-shadow-child.html` (iframe + shadow combinations).
+- **Permissions**: added `webNavigation` (MV3, non-debugger/CDP) so the
+  extension can enumerate frames and represent unreachable child frames as
+  unavailable. No `debugger`, no permanent `<all_urls>`.
+
+### Security / privacy
+- Secret fields (password/OTP/card) are never serialized as values; the
+  sanitizer is authoritative and applies across the top document, frames and
+  shadow roots. Defensive redaction of card/OTP-looking runs in accessible
+  names.
+- No highlighting, vision, autonomous actions, browsing history, telemetry,
+  click/type/submit primitives, or model-controlled JavaScript execution added.
+- No raw secret values, no API key in the extension bundle; backend provider
+  secret remains backend-only.
+
 ## [0.0.4-p0-g1-baseline] - 2026-09-04
 
 ### Status

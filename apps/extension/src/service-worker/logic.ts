@@ -5,19 +5,19 @@
  * a fresh, self-contained call to the backend.
  */
 import type { AssistResultMessage } from "../shared/messages";
-import type { AccessibleDOMSnapshot, HelpSession } from "@guided-web/protocol";
+import type { HelpSession, PageContext } from "@guided-web/protocol";
 
 export function buildAssistPayload(
-  snapshot: AccessibleDOMSnapshot,
+  context: PageContext,
   question: string,
   session: HelpSession,
 ) {
   return {
-    protocolVersion: 2,
+    protocolVersion: 3,
     mode: "DOM_ONLY" as const,
     question,
     session,
-    snapshot,
+    context,
   };
 }
 
@@ -25,7 +25,7 @@ export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 export async function requestAssist(
   backendUrl: string,
-  snapshot: AccessibleDOMSnapshot,
+  context: PageContext,
   question: string,
   session: HelpSession,
   fetchImpl: FetchLike = fetch,
@@ -34,7 +34,7 @@ export async function requestAssist(
     const res = await fetchImpl(`${backendUrl}/v1/assist`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildAssistPayload(snapshot, question, session)),
+      body: JSON.stringify(buildAssistPayload(context, question, session)),
     });
 
     const data = (await res.json().catch(() => null)) as

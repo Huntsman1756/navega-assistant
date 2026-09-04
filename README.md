@@ -43,7 +43,7 @@ The system does **not** (in P0):
 P0 prototype implementation: COMPLETE
 Source-release readiness: PASS
 OSS publication hygiene: PASS
-Pre-G1 validation baseline: FROZEN (v0.0.4-p0-g1-baseline)
+Pre-G1 validation baseline: FROZEN (v0.0.5-p0-g1-baseline)
 Human product validation: READY TO START (G1)
 P1 development: BLOCKED (product evidence pending)
 ```
@@ -51,10 +51,12 @@ P1 development: BLOCKED (product evidence pending)
 This version is an experimental validation prototype. It is not intended for
 production or unattended use.
 
-The version identifier `0.0.4-p0-g1-baseline` marks the exact implementation
+The version identifier `0.0.5-p0-g1-baseline` marks the exact implementation
 that is used in human validation. It adds a small, ephemeral current-help-session
-conversation and a per-origin permission UX; it does **not** add highlighting,
-autonomous actions or browsing history. Roadmap: see `docs/ROADMAP.md`. The next
+conversation, a per-origin permission UX and a hardened DOM-extraction layer
+(standards-based accessible semantics, open Shadow DOM traversal, frame-aware
+extraction and deterministic relevance/context budgeting); it does **not** add
+highlighting, autonomous actions or browsing history. Roadmap: see `docs/ROADMAP.md`. The next
 gate is **G1 — P0 Human Product Validation** (see `docs/VALIDATION-PLAN.md`).
 During G1 the engineering baseline is frozen; the decisive artifact is the
 consolidated G1 report (`docs/validation/G1-REPORT-TEMPLATE.md`).

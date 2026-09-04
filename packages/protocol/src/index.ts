@@ -12,7 +12,7 @@
 import { z } from "zod";
 
 /** Version of the wire protocol. Bump on breaking schema changes. */
-export const PROTOCOL_VERSION = 2 as const;
+export const PROTOCOL_VERSION = 3 as const;
 
 /** Context capture mode. The operator, not the model, chooses the mode in P0. */
 export const ContextModeSchema = z.enum(["DOM_ONLY", "DOM_PLUS_VISION"]);
@@ -73,6 +73,60 @@ export const AccessibleDOMSnapshotSchema = z
   })
   .strict();
 export type AccessibleDOMSnapshot = z.infer<typeof AccessibleDOMSnapshotSchema>;
+
+/**
+ * One frame in the tab's document tree during the CURRENT help request.
+ *
+ * Every frame is its own independent document context. A frame either produced
+ * a sanitized `snapshot`, or is explicitly `accessible: false` with a
+ * `unavailableReason`. An inaccessible frame is NEVER silently represented as
+ * an empty snapshot: the model must be able to tell that content is unavailable
+ * rather than absent.
+ *
+ * `origin` is the frame's own origin (not the top page's) and is kept explicit
+ * so the model reasons about which origin a control comes from.
+ */
+export const FrameSnapshotSchema = z
+  .object({
+    frameId: z.number().int().nonnegative(),
+    // The main/top frame reports parentFrameId = -1 (Chrome convention); child
+    // frames report their parent's frameId.
+    parentFrameId: z.number().int().optional(),
+    origin: z.string().optional(),
+    accessible: z.boolean(),
+    snapshot: AccessibleDOMSnapshotSchema.optional(),
+    unavailableReason: z.string().optional(),
+  })
+  .strict()
+  .superRefine((val, ctx) => {
+    if (val.accessible && !val.snapshot) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "an accessible frame must carry a snapshot" });
+    }
+    if (!val.accessible && val.snapshot) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "an unavailable frame must not carry an empty snapshot (use unavailableReason)",
+      });
+    }
+  });
+export type FrameSnapshot = z.infer<typeof FrameSnapshotSchema>;
+
+/**
+ * The whole current page as a set of independent, sanitized frame contexts.
+ *
+ * - `topFrameId` always identifies the top-level (main) document.
+ * - `frames` is bounded (the extractor enforces a total frame budget).
+ * - The representation is intentionally versioned and NOT flattened: an iframe's
+ *   content is never merged into the parent document snapshot.
+ */
+export const PageContextSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    topFrameId: z.number().int().nonnegative(),
+    frames: z.array(FrameSnapshotSchema),
+  })
+  .strict();
+export type PageContext = z.infer<typeof PageContextSchema>;
 
 /**
  * P0 assistant decision. The only kinds of output P0 may produce.
@@ -149,13 +203,19 @@ export const HelpSessionSchema = z
   .strict();
 export type HelpSession = z.infer<typeof HelpSessionSchema>;
 
-/** Request from extension to backend. */
+/**
+ * Request from extension to backend.
+ *
+ * Carries the whole current page as a bounded set of frame contexts (`context`).
+ * A frame-aware assistant reasons about the current page WITHOUT pretending the
+ * top-level document represents the whole page.
+ */
 export const AssistRequestSchema = z
   .object({
-    protocolVersion: z.literal(2),
+    protocolVersion: z.literal(3),
     mode: ContextModeSchema,
     question: z.string().min(1).max(2000),
-    snapshot: AccessibleDOMSnapshotSchema,
+    context: PageContextSchema,
     session: HelpSessionSchema,
   })
   .strict();
@@ -164,7 +224,7 @@ export type AssistRequest = z.infer<typeof AssistRequestSchema>;
 /** Response from backend to extension. */
 export const AssistResponseSchema = z
   .object({
-    protocolVersion: z.literal(2),
+    protocolVersion: z.literal(3),
     decision: P0AssistantDecisionSchema,
     mode: ContextModeSchema,
     provider: z.string().optional(),

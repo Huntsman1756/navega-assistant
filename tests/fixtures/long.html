@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Long Checkout</title>
+  </head>
+  <body>
+    <h1>Finalizar compra</h1>
+    <p>Revise su pedido antes de continuar.</p>
+    <nav>
+      <ul id="nav-list"></ul>
+    </nav>
+    <main>
+      <section>
+        <h2>Resumen</h2>
+        <p>Artículo: Auriculares inalámbricos.</p>
+      </section>
+      <button id="pay" type="button">Pagar ahora</button>
+    </main>
+    <div id="footer-stack"></div>
+    <script>
+      // Deterministic noisy content: hundreds of repeated navigation links and
+      // repeated footer boilerplate so a relevant control deep in the DOM must
+      // survive relevance ranking rather than a plain DOM-order cap.
+      var nav = document.getElementById("nav-list");
+      for (var i = 0; i < 300; i++) {
+        var li = document.createElement("li");
+        var a = document.createElement("a");
+        a.href = "#" + i;
+        a.textContent = i % 3 === 0 ? "Inicio" : "Sección " + (i % 5);
+        li.appendChild(a);
+        nav.appendChild(li);
+      }
+      var footerStack = document.getElementById("footer-stack");
+      for (var j = 0; j < 50; j++) {
+        var f = document.createElement("footer");
+        f.textContent = "Términos legales · Privacidad · © 2026";
+        footerStack.appendChild(f);
+      }
+    </script>
+  </body>
+</html>

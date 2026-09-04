@@ -39,7 +39,7 @@ export function createApp(provider: AIProvider, providerName: string, model?: st
         mode: req.mode,
         question: req.question,
         session: req.session,
-        snapshot: req.snapshot,
+        context: req.context,
         systemPrompt: buildSystemPrompt(),
       });
     } catch (err) {

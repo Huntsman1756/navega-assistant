@@ -30,4 +30,17 @@ describe("buildSystemPrompt", () => {
     expect(p).toMatch(/ya estoy/);
     expect(p).toMatch(/use the PREVIOUS HELP CONTEXT to understand/i);
   });
+
+  it("describes the CURRENT PAGE as a fresh, frame-aware representation", () => {
+    const p = buildSystemPrompt();
+    expect(p).toMatch(/CURRENT PAGE is FRESH/i);
+    expect(p).toMatch(/frames?/i);
+    expect(p).toMatch(/topFrameId/i);
+    expect(p).toMatch(/UNAVAILABLE/i);
+  });
+
+  it("forbids inventing controls that are not represented in the context", () => {
+    const p = buildSystemPrompt();
+    expect(p).toMatch(/Never invent a control/i);
+  });
 });

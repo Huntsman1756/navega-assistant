@@ -1,10 +1,12 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Frame } from "@playwright/test";
 import { resolve, dirname } from "node:path";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const API_URL = "http://localhost:8787";
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const extractScript = readFileSync(resolve(__dirname, "..", "dist", "content", "extract.js"), "utf8");
 
 // Stub the minimal chrome surface used by the bundled content extractor so we
 // can drive the real built bundle against a real browser DOM. In production the
@@ -21,11 +23,90 @@ async function captureSnapshot(page: Page, fixturePath: string) {
     };
   });
   await page.goto(`/${fixturePath}`);
+  await page.waitForTimeout(150);
   // Inject via CDP (Runtime.evaluate) so the test is robust to any page CSP.
   // The real extension injects this bundle through chrome.scripting.executeScript.
-  const script = readFileSync(resolve(__dirname, "..", "dist", "content", "extract.js"), "utf8");
-  await page.evaluate(`(function(){${script}})()`);
+  await page.evaluate(`(function(){${extractScript}})()`);
   return page.evaluate(() => (window as unknown as { __gwaSnapshot?: any }).__gwaSnapshot?.snapshot);
+}
+
+// Frame-aware capture: inject the real bundle into every frame and assemble a
+// PageContext, mirroring the extension's frame-aware extraction. Synthetic
+// frameIds are assigned in document order (main frame = 0).
+async function capturePageContext(page: Page, fixturePath: string) {
+  await page.addInitScript(() => {
+    (window as unknown as { chrome?: unknown }).chrome = {
+      runtime: {
+        sendMessage: (msg: unknown) => {
+          (window as unknown as { __gwaSnapshot?: unknown }).__gwaSnapshot = msg;
+        },
+      },
+    };
+  });
+  await page.goto(`/${fixturePath}`);
+  await page.waitForTimeout(200);
+
+  const frames: Frame[] = page.frames();
+  const inputs: Array<{
+    frameId: number;
+    parentFrameId?: number;
+    origin: string;
+    accessible: boolean;
+    snapshot?: any;
+    unavailableReason?: string;
+  }> = [];
+
+  let id = 0;
+  for (const frame of frames) {
+    const isMain = frame === page.mainFrame();
+    const frameId = isMain ? 0 : ++id;
+    const parent = frame.parentFrame();
+    const parentFrameId = isMain || !parent ? -1 : frames.indexOf(parent) === 0 ? 0 : frames.indexOf(parent);
+    try {
+      await frame.evaluate(`(function(){${extractScript}})()`);
+      const snapshot = await frame.evaluate(
+        () => (window as unknown as { __gwaSnapshot?: any }).__gwaSnapshot?.snapshot,
+      );
+      if (snapshot) {
+        inputs.push({
+          frameId,
+          parentFrameId: isMain ? -1 : parentFrameId,
+          origin: new URL(frame.url()).origin,
+          accessible: true,
+          snapshot,
+        });
+      } else {
+        inputs.push({
+          frameId,
+          parentFrameId: isMain ? -1 : parentFrameId,
+          origin: new URL(frame.url()).origin,
+          accessible: false,
+          unavailableReason: "cross_origin_unavailable",
+        });
+      }
+    } catch {
+      inputs.push({
+        frameId,
+        parentFrameId: isMain ? -1 : parentFrameId,
+        origin: new URL(frame.url()).origin,
+        accessible: false,
+        unavailableReason: "cross_origin_unavailable",
+      });
+    }
+  }
+
+  return {
+    schemaVersion: 1,
+    topFrameId: 0,
+    frames: inputs.map((i) => ({
+      frameId: i.frameId,
+      parentFrameId: i.parentFrameId,
+      origin: i.origin,
+      accessible: i.accessible,
+      snapshot: i.snapshot,
+      unavailableReason: i.unavailableReason,
+    })),
+  };
 }
 
 function emptySession() {
@@ -53,15 +134,62 @@ test.describe("content extract bundle (browser)", () => {
   });
 });
 
+test.describe("frame-aware + shadow + relevance extraction (browser)", () => {
+  test("discovers a control inside an open shadow root", async ({ page }) => {
+    const ctx = await capturePageContext(page, "shadow.html");
+    const top = ctx.frames[0];
+    expect(top.accessible).toBe(true);
+    const names = top.snapshot.elements.map((e: any) => e.accessibleName).join(" ");
+    expect(names).toContain("Enviar consulta");
+    // The sensitive input inside the shadow root never leaks its value.
+    expect(JSON.stringify(ctx)).not.toContain("shadow-secret-1234");
+  });
+
+  test("finds a relevant control deep in a long/noisy page", async ({ page }) => {
+    const ctx = await capturePageContext(page, "long.html");
+    const top = ctx.frames[0];
+    const pay = top.snapshot.elements.find((e: any) => e.accessibleName?.toLowerCase().includes("pagar"));
+    expect(pay).toBeDefined();
+    expect(top.snapshot.elements.length).toBeLessThanOrEqual(200);
+  });
+
+  test("represents a same-origin iframe as an independent frame context", async ({ page }) => {
+    const ctx = await capturePageContext(page, "iframe.html");
+    expect(ctx.frames.length).toBeGreaterThanOrEqual(2);
+    const top = ctx.frames[0];
+    const child = ctx.frames[1];
+    expect(top.origin).toBe(new URL(top.snapshot.page.url).origin);
+    // Top frame has its own controls, not the child's.
+    expect(top.snapshot.elements.some((e: any) => e.accessibleName?.includes("Pagar"))).toBe(false);
+    // Child frame keeps its own context and origin.
+    expect(child.accessible).toBe(true);
+    expect(child.snapshot.snapshotId).toBeDefined();
+    expect(child.snapshot.elements.some((e: any) => e.accessibleName?.includes("Pagar"))).toBe(true);
+    // The child snapshot is NOT merged into the top frame.
+    expect(ctx.frames[0].snapshot.elements.map((e: any) => e.accessibleName)).not.toContain(
+      child.snapshot.elements[0].accessibleName,
+    );
+  });
+
+  test("combines iframe + shadow and keeps secrets protected", async ({ page }) => {
+    const ctx = await capturePageContext(page, "iframe-shadow.html");
+    const all = JSON.stringify(ctx);
+    expect(all).not.toContain("iframe-shadow-secret-777");
+    const names = ctx.frames.flatMap((f: any) => (f.snapshot?.elements ?? []).map((e: any) => e.accessibleName));
+    expect(names.join(" ")).toContain("Guardar proyecto");
+    expect(names.join(" ")).toContain("Activar notificaciones");
+  });
+});
+
 test.describe("vertical slice (browser extract -> live backend)", () => {
   test("extracts in browser, posts to the backend, and gets a safe instruction", async ({ page }) => {
-    const snap = await captureSnapshot(page, "login.html");
+    const ctx = await capturePageContext(page, "login.html");
     const res = await page.request.post(`${API_URL}/v1/assist`, {
       data: {
-        protocolVersion: 2,
+        protocolVersion: 3,
         mode: "DOM_ONLY",
         question: "I don't know what to do here.",
-        snapshot: snap,
+        context: ctx,
         session: emptySession(),
       },
     });
@@ -78,13 +206,13 @@ test.describe("vertical slice (browser extract -> live backend)", () => {
 test.describe("help session vertical (mock provider, deterministic)", () => {
   test("second request sees the previous help context and a fresh snapshot", async ({ page }) => {
     // First request: no history yet.
-    const snap1 = await captureSnapshot(page, "login.html");
+    const ctx1 = await capturePageContext(page, "login.html");
     const res1 = await page.request.post(`${API_URL}/v1/assist`, {
       data: {
-        protocolVersion: 2,
+        protocolVersion: 3,
         mode: "DOM_ONLY",
         question: "¿Qué es esta página?",
-        snapshot: snap1,
+        context: ctx1,
         session: emptySession(),
       },
     });
@@ -98,21 +226,21 @@ test.describe("help session vertical (mock provider, deterministic)", () => {
       schemaVersion: 1,
       sessionId: "e2e-s1",
       goal: "¿Qué es esta página?",
-      currentOrigin: snap1.page.origin,
+      currentOrigin: ctx1.frames[0].origin,
       turns: [
         { role: "user", text: "¿Qué es esta página?", timestamp: 1 },
         { role: "assistant", text: json1.decision.message, timestamp: 2 },
       ],
     };
 
-    // Second request on a DIFFERENT page (fresh snapshot).
-    const snap2 = await captureSnapshot(page, "product.html");
+    // Second request on a DIFFERENT page (fresh context).
+    const ctx2 = await capturePageContext(page, "product.html");
     const res2 = await page.request.post(`${API_URL}/v1/assist`, {
       data: {
-        protocolVersion: 2,
+        protocolVersion: 3,
         mode: "DOM_ONLY",
         question: "¿Y qué hago ahora?",
-        snapshot: snap2,
+        context: ctx2,
         session,
       },
     });
@@ -156,6 +284,11 @@ test.describe("site access / permission UX (real side-panel bundle + stubbed chr
               },
             });
           },
+        },
+        webNavigation: {
+          getAllFrames: async () => [
+            { frameId: 0, parentFrameId: -1, url: "https://mail.google.com/mail" },
+          ],
         },
         runtime: {
           onMessage: {
@@ -201,9 +334,10 @@ test.describe("site access / permission UX (real side-panel bundle + stubbed chr
     // Grant -> retry succeeds, no double submission.
     await page.click("#permission-allow");
     await expect(page.locator("#permission")).toBeHidden();
+    // Wait for the retry to complete (frame capture + backend round-trip).
+    await expect(page.locator("#conversation")).toContainText("Pulsa “Recibidos”, a la izquierda.");
     const state = await page.evaluate(() => (window as any).__gwa);
     expect(state.assistCalls).toBe(1);
     expect(state.permissionRequests).toBe(1);
-    await expect(page.locator("#conversation")).toContainText("Pulsa “Recibidos”, a la izquierda.");
   });
 });

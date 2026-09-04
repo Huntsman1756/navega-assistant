@@ -1,6 +1,6 @@
 {
   "name": "@guided-web/accessible-dom",
-  "version": "0.0.4-p0-g1-baseline",
+  "version": "0.0.5-p0-g1-baseline",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
@@ -18,7 +18,8 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@guided-web/protocol": "workspace:*"
+    "@guided-web/protocol": "workspace:*",
+    "dom-accessibility-api": "^0.7.1"
   },
   "devDependencies": {
     "typescript": "^5.5.4",

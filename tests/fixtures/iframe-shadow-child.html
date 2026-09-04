@@ -1,0 +1,18 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Notificaciones</title>
+  </head>
+  <body>
+    <p>Este panel vive en un iframe y contiene su propio shadow root.</p>
+    <div id="panel-host"></div>
+    <script>
+      var host = document.getElementById("panel-host");
+      var shadow = host.attachShadow({ mode: "open" });
+      shadow.innerHTML =
+        "<button id=\"enable\" aria-label=\"Activar notificaciones\">Notificar</button>" +
+        "<input id=\"token\" type=\"password\" value=\"iframe-shadow-secret-777\">";
+    </script>
+  </body>
+</html>
