@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Guided Web Assistant</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Guided Web Assistant</h1>
+      <div id="mode" class="mode">Context: <strong>DOM only</strong></div>
+
+      <label for="question">What do you need help with?</label>
+      <textarea
+        id="question"
+        rows="2"
+        placeholder="e.g. I don't know what to do here."
+      ></textarea>
+
+      <button id="help-btn">Help me with this page</button>
+
+      <hr />
+
+      <div class="assistant-label">Assistant:</div>
+      <div id="status" class="status"></div>
+      <div id="answer" class="answer"></div>
+
+      <section class="operator" hidden>
+        <label for="outcome">Validation outcome (operator only)</label>
+        <select id="outcome">
+          <option value="">Record outcome…</option>
+          <option value="success">Success</option>
+          <option value="wrong_guidance">Wrong guidance</option>
+          <option value="unsafe_guidance">Unsafe guidance</option>
+          <option value="abandoned">Abandoned</option>
+          <option value="not_applicable">Not applicable</option>
+        </select>
+      </section>
+    </main>
+    <script src="./index.js" defer></script>
+  </body>
+</html>
