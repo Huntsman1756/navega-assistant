@@ -33,15 +33,21 @@ The system does **not** (in P0):
 - trusted-contact delivery
 - automatic vision routing
 
-## Maturity and phase
+## Current status
 
-- **Project maturity:** experimental product-validation prototype.
-- **P0 prototype implementation complete.**
-- **Human product validation pending.** The software prototype, security
-  baseline, test harness and validation tooling are complete, but we do not yet
-  know whether the assistant actually helps the target population. That is the
-  single remaining P0 outcome. Roadmap: see `docs/ROADMAP.md`.
-- **Versioning:** experimental prerelease (`0.0.1-p0`). Not a stable release.
+```text
+P0 prototype implementation: COMPLETE
+Source-release readiness: PASS
+Human product validation: PENDING
+P1 development: NOT STARTED
+```
+
+This version is an experimental validation prototype. It is not intended for
+production or unattended use.
+
+The version identifier `0.0.1-p0` expresses that we are before a stable
+release. Roadmap: see `docs/ROADMAP.md`. The next gate is **G1 — P0 Human
+Product Validation** (see `docs/VALIDATION-PLAN.md`).
 
 ## Supported browsers
 

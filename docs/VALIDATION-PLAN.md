@@ -1,7 +1,38 @@
 # P0 Validation Plan
 
-P0 is a **controlled, qualitative product-validation prototype**. The goal is
-NOT to demonstrate engineering sophistication. The goal is to answer:
+## G1 gate — P0 Human Product Validation
+
+The next open gate is **G1**:
+
+```text
+G1 — P0 HUMAN PRODUCT VALIDATION
+```
+
+Requirement: **real human evidence**, not a technical gate. It is deliberately
+not a single percentage. The gate passes when the qualitative review answers
+these questions with evidence:
+
+- which tasks improved with the assistant, and which did not?
+- what errors did the model make?
+- which instructions confused the participant?
+- where was DOM-derived context insufficient?
+- what differences were there between functional profiles?
+- which problems would a highlight overlay actually solve?
+- which problems have nothing to do with highlighting (context/model, UX/onboarding)?
+
+Examples of discriminating evidence:
+
+- “The model identifies the right control, but the person cannot find it
+  visually.” → evidence to build P1 (highlight).
+- “The model misinterprets what the form means.” → a highlight does not help;
+  improve context/model first.
+- “The person understood everything, but opening the assistant cost more than
+  asking a relative.” → a UX/onboarding problem, not target resolution.
+
+P1 is **deliberately blocked** until G1 produces this evidence.
+
+P0 is a **controlled, qualitative product-validation prototype**. The goal
+is NOT to demonstrate engineering sophistication. The goal is to answer:
 
 1. Can a model understand a compact DOM-derived representation well enough to
    help a low-digital-confidence user?
