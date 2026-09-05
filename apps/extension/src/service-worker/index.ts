@@ -31,7 +31,7 @@ async function handleAssist(msg: AssistMessage): Promise<AssistResultMessage> {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const msg = message as Partial<AssistMessage> | undefined;
-  if (msg?.type === "GWA_ASSIST") {
+  if (msg?.type === "GWA_ASSIST" && _sender.url === chrome.runtime.getURL("sidepanel/index.html")) {
     void handleAssist(msg as AssistMessage).then((result) => sendResponse(result));
     return true;
   }

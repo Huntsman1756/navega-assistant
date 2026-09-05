@@ -9,7 +9,9 @@
  * conservatively-gated) layer for secret-looking visible text. See
  * `docs/SECURITY-INVARIANTS.md` P0-07 for the exact, auditable contract.
  */
-export type SecretFieldKind = "password" | "otp" | "card" | "none";
+import { iterElements } from "./traversal";
+
+export type SecretFieldKind = "password" | "otp" | "card" | "secret" | "none";
 
 /** Heuristically classify a form control as a secret-bearing field. */
 export function classifySecretField(el: Element): SecretFieldKind {
@@ -18,7 +20,9 @@ export function classifySecretField(el: Element): SecretFieldKind {
   const name = (el.getAttribute("name") || "").toLowerCase();
   const id = (el.getAttribute("id") || "").toLowerCase();
   const placeholder = (el.getAttribute("placeholder") || "").toLowerCase();
-  const combined = `${name} ${id} ${placeholder}`;
+  const label = el.getAttribute("aria-label") || "";
+  const combined = `${name} ${id} ${placeholder} ${label}`.replace(/[_-]/g, " ").toLowerCase();
+  if (/api\s*key|secret|token|recovery|backup\s*code|password|contrase[?n]a/.test(combined)) return "secret";
 
   if (type === "password") return "password";
   if (autocomplete.includes("one-time-code") || autocomplete.includes("otp")) return "otp";
@@ -58,7 +62,7 @@ export function isHidden(el: Element): boolean {
 
 /**
  * Extra defensive redaction applied to the *accessible name* of a classified
- * secret field. Accessible-name calculation never reads an input's live value,
+ * secret field. Accessible-name calculation can indirectly read live values,
  * but we still strip digit runs that could look like a card/OTP/verification
  * code so no plausible secret can slip through as a name or placeholder. This
  * is layered on top of the fact that the sanitizer is the authoritative
@@ -109,4 +113,35 @@ export function redactSensitiveVisibleText(text: string): string {
     },
   );
   return changed ? out : text;
+}
+
+/** Local-only dictionary: never attach it to wire schemas or storage. */
+export function collectSensitiveValues(root: Document | ShadowRoot): string[] {
+  const values = new Set<string>();
+  let characters = 0;
+  for (const el of iterElements(root)) {
+    if (!['input', 'textarea', 'select'].includes(el.localName)) continue;
+    if (classifySecretField(el) === 'none' && el.getAttribute('type') !== 'hidden') continue;
+    const value = (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value;
+    if (!value || values.has(value)) continue;
+    values.add(value);
+    characters += value.length;
+    if (values.size > 2000 || characters > 64000) throw new Error('privacy collection budget exceeded');
+  }
+  return [...values];
+}
+
+/** Every string value, using exact literal matching rather than secret-pattern regexes. */
+export function sanitizeStrings<T>(value: T, sensitiveValues: readonly string[]): T {
+  const secrets = [...new Set(sensitiveValues.filter(Boolean))].sort((a,b) => b.length - a.length);
+  const clean = (text: string): string => {
+    let out = redactSensitiveVisibleText(text);
+    let previous: string;
+    do {
+      previous = out;
+      for (const secret of secrets) out = out.split(secret).join('');
+    } while (out !== previous);
+    return out;
+  };
+  return JSON.parse(JSON.stringify(value, (_key, item: unknown) => typeof item === 'string' ? clean(item) : item)) as T;
 }

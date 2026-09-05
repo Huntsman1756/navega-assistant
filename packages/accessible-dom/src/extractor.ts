@@ -21,7 +21,7 @@
 import { boundContext, reducedUrl } from "./frames";
 import type { AccessibleDOMSnapshot, AccessibleElement, ElementState } from "@guided-web/protocol";
 import { computeAccessibleName, getRole, isDisabled, isInaccessible } from "dom-accessibility-api";
-import { classifySecretField, shouldExcludeElement, redactSensitiveRuns, redactSensitiveVisibleText } from "./sanitizer";
+import { collectSensitiveValues, sanitizeStrings, classifySecretField, shouldExcludeElement, redactSensitiveRuns, redactSensitiveVisibleText } from "./sanitizer";
 import { iterElements, ancestorContext } from "./traversal";
 import {
   orderCandidates,
@@ -181,7 +181,7 @@ function computeState(el: Element): ElementState | undefined {
 
 function analyze(el: Element, domIndex: number, role: string | undefined): CandidateAnalysis {
   const secretKind = classifySecretField(el);
-  const accessibleNameRaw = computeAccessibleName(el).trim().slice(0, 160);
+  const accessibleNameRaw = redactSensitiveVisibleText(computeAccessibleName(el)).trim().slice(0, 160);
   const accessibleName =
     secretKind === "none" ? accessibleNameRaw : redactSensitiveRuns(accessibleNameRaw, secretKind);
 
@@ -271,6 +271,7 @@ export function extractAccessibleDOMSnapshot(
   root: Document | ShadowRoot,
   options: ExtractOptions = {},
 ): AccessibleDOMSnapshot {
+  const sensitiveValues = collectSensitiveValues(root);
   const budgets = { ...DEFAULT_BUDGETS, ...options } as Required<BudgetSettings>;
   const snapshotId = options.snapshotId ?? makeId();
 
@@ -308,5 +309,5 @@ export function extractAccessibleDOMSnapshot(
   const result = bounded.frames[0]?.snapshot;
   if (!result) throw new Error("snapshot metadata exceeds budget");
   result.truncated = bounded.truncated;
-  return result;
+  return sanitizeStrings(result, sensitiveValues);
 }

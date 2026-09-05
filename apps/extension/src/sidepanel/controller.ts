@@ -8,6 +8,7 @@
  */
 import type { AccessibleDOMSnapshot, HelpSession, HelpTurn, PageContext } from "@guided-web/protocol";
 import type { AssistResultMessage } from "../shared/messages";
+import { sanitizeOutbound, sanitizeCapturedData } from "./outbound";
 import { capturePageContext } from "./capture";
 import {
   appendTurn,
@@ -230,20 +231,23 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
       const context = await captureWithPermission(activeTab.id, activeTab.url);
       logPerf("capture_ms", tCapture);
 
-      const sWithOrigin = setCurrentOrigin(s, pageContextOrigin(context));
+      const outbound = sanitizeOutbound(context, question, setCurrentOrigin(s, pageContextOrigin(context)));
+      question = outbound.question;
+      pendingUserText = question;
+      const sWithOrigin = outbound.session;
       session = sWithOrigin;
 
       setStatus("Preguntando al asistente…");
       // T_assist_request: extension sends → extension receives backend response.
       const tAssist = perfNow();
       const result = await facade.sendAssist({
-        context,
+        context: outbound.context,
         question,
         session: sWithOrigin,
       });
       logPerf("assist_request_ms", tAssist);
 
-      renderResult(result, question);
+      renderResult(sanitizeCapturedData(context, result), question);
     } catch (err) {
       handleError(err, question, activeTab);
     } finally {
@@ -449,11 +453,12 @@ export function createChromeFacade(cc: typeof chrome): ChromeFacade {
         onMessage: (listener) => {
           const handler = (message: unknown, sender: chrome.runtime.MessageSender) => {
             const msg = message as
-              | { type?: string; snapshot?: AccessibleDOMSnapshot; captureToken?: string }
+              | { type?: string; snapshot?: AccessibleDOMSnapshot; captureToken?: string; sensitiveValues?: string[] }
               | undefined;
             listener({
               type: msg?.type,
               snapshot: msg?.snapshot,
+              sensitiveValues: msg?.sensitiveValues,
               captureToken: msg?.captureToken,
               senderTabId: sender?.tab?.id,
               senderFrameId: sender?.frameId,

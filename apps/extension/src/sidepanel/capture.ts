@@ -24,6 +24,8 @@
 import type { AccessibleDOMSnapshot, PageContext } from "@guided-web/protocol";
 import { buildPageContext, MAX_FRAMES, type FrameInput } from "@guided-web/accessible-dom";
 
+import { rememberCaptureSecrets } from "./outbound";
+
 export const SNAPSHOT_MESSAGE = "GWA_SNAPSHOT";
 export const SNAPSHOT_TIMEOUT_MS = 6000;
 export const SNAPSHOT_SETTLE_MS = 250;
@@ -39,6 +41,7 @@ export interface EnumeratedFrame {
 export interface CaptureEvent {
   type?: string;
   snapshot?: AccessibleDOMSnapshot;
+  sensitiveValues?: string[];
   captureToken?: string;
   senderTabId?: number;
   senderFrameId?: number;
@@ -97,6 +100,8 @@ export async function capturePageContext(env: CaptureEnvironment): Promise<PageC
   const omittedFrames = enumerated.length > MAX_FRAMES;
   enumerated = [...enumerated.filter(f => f.frameId === TOP_FRAME_ID), ...enumerated.filter(f => f.frameId !== TOP_FRAME_ID)].slice(0, MAX_FRAMES);
 
+  const sensitiveValues = new Set<string>();
+  let captureFailed = false;
   const collected = new Map<number, { frameId: number; origin: string; snapshot: AccessibleDOMSnapshot }>();
   let settleTimer: ReturnType<typeof setTimeout> | undefined;
   let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
@@ -110,10 +115,12 @@ export async function capturePageContext(env: CaptureEnvironment): Promise<PageC
       // unrelated extension message can never populate this PageContext.
       if (msg.senderTabId !== tabId) return;
       if (msg.captureToken !== token) return;
+      if (msg.type === "GWA_CAPTURE_FAILED") { captureFailed = true; return; }
       if (msg.type !== SNAPSHOT_MESSAGE || !msg.snapshot) return;
       const frameId = msg.senderFrameId ?? TOP_FRAME_ID;
       if (settled || !enumerated.some(f => f.frameId === frameId)) return;
       const origin = msg.senderOrigin || originOf(msg.senderUrl ?? "") || "";
+      for (const value of msg.sensitiveValues ?? []) sensitiveValues.add(value);
       collected.set(frameId, { frameId, origin, snapshot: msg.snapshot });
     });
 
@@ -155,7 +162,7 @@ export async function capturePageContext(env: CaptureEnvironment): Promise<PageC
 
       const topFrameId = enumerated.find((f) => f.parentFrameId === -1)?.frameId ?? TOP_FRAME_ID;
       const top = inputs.find((i) => i.frameId === topFrameId) ?? inputs[0];
-      if (!top?.accessible) {
+      if (captureFailed || !top?.accessible) {
         // The top page itself cannot be read: surface the access failure so the
         // caller triggers the per-origin permission UX. Child frames never cause
         // this rejection.
@@ -165,6 +172,7 @@ export async function capturePageContext(env: CaptureEnvironment): Promise<PageC
 
       const context = buildPageContext(topFrameId, inputs);
       if (omittedFrames) context.truncated = true;
+      rememberCaptureSecrets(context, [...sensitiveValues]);
       resolve(context);
     };
 

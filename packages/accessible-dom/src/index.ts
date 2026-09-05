@@ -17,3 +17,5 @@ export {
   MAX_TOTAL_CONTEXT_CHARACTERS,
 } from "./frames";
 export type { FrameInput } from "./frames";
+
+export { collectSensitiveValues, sanitizeStrings } from "./sanitizer";
