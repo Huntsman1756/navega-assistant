@@ -108,6 +108,12 @@ and raw sensitive input values are never serialized or retained.
 - No analytics SDK by default.
 - No crash-reporting service by default.
 
+Local latency instrumentation (`[perf] capture_ms / assist_request_ms /
+backend_request_ms / provider_ms / total_ms`) is **not telemetry**: it is a
+duration printed only to the local developer console, never sent, persisted or
+correlated. It contains no question text, no page content, no URLs, no session
+contents and no identifiers of any kind.
+
 If telemetry is ever added it must be voluntary, documented, privacy-preserving
 and separately consented to.
 

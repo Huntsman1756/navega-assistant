@@ -19,6 +19,39 @@ import { resolveActiveTab } from "./active-tab";
 
 export const DEFAULT_QUESTION = "No sé qué hacer aquí.";
 
+/** Monotonic local clock (Side Panel always has performance.now). */
+function perfNow(): number {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+/**
+ * Local latency instrumentation: duration ONLY. Never the question, the page
+ * content, the session or any identifier. No telemetry, no persistence.
+ */
+function logPerf(metric: string, startedAt: number): void {
+  console.log(`[perf] ${metric}=${Math.max(0, Math.round(perfNow() - startedAt))}`);
+}
+
+/**
+ * Maps a machine-readable error code to a short, non-technical Spanish
+ * message for the user. The code itself is logged to the console (codes are
+ * not sensitive) for debugging, but never rendered in the UI.
+ */
+const FRIENDLY_ERRORS: Record<string, string> = {
+  network: "No pude conectar con el asistente. Inténtalo de nuevo.",
+  backend_timeout: "El asistente no respondió a tiempo. Inténtalo de nuevo.",
+  provider_timeout: "Está tardando más de lo normal. Inténtalo de nuevo.",
+  provider_unavailable: "El asistente no está disponible ahora mismo. Inténtalo de nuevo.",
+  invalid_model_output: "No pude interpretar la respuesta. Inténtalo de nuevo.",
+};
+
+const GENERIC_ERROR = "Algo salió mal. Inténtalo de nuevo.";
+
+function friendlyError(error: string): string {
+  console.warn(`[navega] assist_error code=${error}`);
+  return FRIENDLY_ERRORS[error] ?? GENERIC_ERROR;
+}
+
 /**
  * Explicit pending help request. Holds the EXACT original question plus the
  * minimal context needed to retry AFTER a site-permission grant. It NEVER
@@ -176,6 +209,8 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
     hidePermission();
     clearPending();
 
+    // T_total: user submits → final success/error state rendered (see finally).
+    const tTotal = perfNow();
     pendingUserText = question;
     renderConversation();
 
@@ -190,22 +225,29 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
       }
       activeTab = { id: tab.id, url: tab.url ?? "" };
       setStatus("Analizando esta página…");
+      // T_capture: start of current-page capture → PageContext ready.
+      const tCapture = perfNow();
       const context = await captureWithPermission(activeTab.id, activeTab.url);
+      logPerf("capture_ms", tCapture);
 
       const sWithOrigin = setCurrentOrigin(s, pageContextOrigin(context));
       session = sWithOrigin;
 
       setStatus("Preguntando al asistente…");
+      // T_assist_request: extension sends → extension receives backend response.
+      const tAssist = perfNow();
       const result = await facade.sendAssist({
         context,
         question,
         session: sWithOrigin,
       });
+      logPerf("assist_request_ms", tAssist);
 
       renderResult(result, question);
     } catch (err) {
       handleError(err, question, activeTab);
     } finally {
+      logPerf("total_ms", tTotal);
       inFlight = false;
       els.helpButton.disabled = false;
       els.newHelpButton.disabled = false;
@@ -214,11 +256,11 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
 
   function renderResult(result: AssistResultMessage, userText: string): void {
     if (result.type !== "GWA_ASSIST_RESULT") {
-      setStatus("No pude ayudarte con eso.");
+      setStatus(GENERIC_ERROR);
       return;
     }
     if (!result.ok) {
-      setStatus(`No pude ayudarte con eso. (${result.error})`);
+      setStatus(friendlyError(result.error));
       return;
     }
     if (session) {
@@ -260,7 +302,10 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
       );
       return;
     }
-    setStatus(`Algo salió mal. Inténtalo de nuevo. (${err instanceof Error ? err.message : String(err)})`);
+    // Never render raw Error text (it can contain URLs/technical detail).
+    // Only the error CLASS goes to the local console, never to the UI.
+    console.warn(`[navega] unexpected_error name=${err instanceof Error ? err.name : typeof err}`);
+    setStatus(GENERIC_ERROR);
   }
 
   async function allowOrigin(): Promise<void> {

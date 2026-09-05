@@ -7,17 +7,68 @@ import {
 } from "@guided-web/protocol";
 import { checkInstructionSafety, checkConversationSimplicity } from "@guided-web/security-policy";
 import { buildSystemPrompt } from "./prompt";
+import { DEFAULT_PROVIDER_TIMEOUT_MS } from "./config";
+
+export { DEFAULT_PROVIDER_TIMEOUT_MS };
+
+/**
+ * Sentinel error raised when the provider exceeds its hard deadline. It is
+ * classified specifically as `provider_timeout` (HTTP 504), never folded into
+ * the generic `provider_unavailable`. No automatic retry.
+ */
+export class ProviderTimeoutError extends Error {
+  constructor() {
+    super("provider_timeout");
+    this.name = "ProviderTimeoutError";
+  }
+}
+
+/**
+ * Races a provider promise against a hard deadline. On expiry the controller
+ * is aborted (so the provider's underlying fetch is cancelled and the socket
+ * released) and the race rejects with `ProviderTimeoutError`. Even a provider
+ * that ignores the AbortSignal cannot delay the HTTP response past the limit.
+ * The timer is always cleared once the race settles (success OR failure).
+ */
+function withProviderTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  controller: AbortController,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      controller.abort();
+      reject(new ProviderTimeoutError());
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
 
 /**
  * Builds the backend HTTP app.
  *
  * Pipeline per request:
- *   raw request -> strict schema validation -> provider call -> JSON parse ->
- *   strict decision validation -> instruction safety checks -> simplicity
- *   checks -> response.
+ *   raw request -> strict schema validation -> provider call (with hard
+ *   deadline + AbortSignal) -> JSON parse -> strict decision validation ->
+ *   instruction safety checks -> simplicity checks -> response.
  */
-export function createApp(provider: AIProvider, providerName: string, model?: string): Hono {
+export function createApp(
+  provider: AIProvider,
+  providerName: string,
+  model?: string,
+  opts?: { providerTimeoutMs?: number },
+): Hono {
   const app = new Hono();
+  const providerTimeoutMs = opts?.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
 
   app.get("/health", (c) => c.json({ ok: true, provider: providerName }));
 
@@ -34,17 +85,39 @@ export function createApp(provider: AIProvider, providerName: string, model?: st
     const req = parsed.data;
 
     let response;
+    // Local-only perf instrumentation. Duration + outcome ONLY: never the
+    // question, the page content, the session, URLs or any provider detail.
+    const tProvider = performance.now();
+    const controller = new AbortController();
     try {
-      response = await provider.assist({
-        mode: req.mode,
-        question: req.question,
-        session: req.session,
-        context: req.context,
-        systemPrompt: buildSystemPrompt(),
-      });
+      response = await withProviderTimeout(
+        provider.assist(
+          {
+            mode: req.mode,
+            question: req.question,
+            session: req.session,
+            context: req.context,
+            systemPrompt: buildSystemPrompt(),
+          },
+          controller.signal,
+        ),
+        providerTimeoutMs,
+        controller,
+      );
     } catch (err) {
-      return c.json({ error: "provider_unavailable", message: String(err) }, 502);
+      const elapsedMs = Math.round(performance.now() - tProvider);
+      const timedOut = err instanceof ProviderTimeoutError || controller.signal.aborted;
+      if (timedOut) {
+        console.log(`[perf] provider_ms=${elapsedMs} result=timeout`);
+        return c.json({ error: "provider_timeout" }, 504);
+      }
+      // Log ONLY the error class name (never the message: provider error text
+      // can echo request content). The extension gets a stable code only.
+      const kind = err instanceof Error ? err.name : "unknown";
+      console.log(`[perf] provider_ms=${elapsedMs} result=error error_kind=${kind}`);
+      return c.json({ error: "provider_unavailable" }, 502);
     }
+    console.log(`[perf] provider_ms=${Math.round(performance.now() - tProvider)} result=ok`);
 
     let rawDecision: unknown;
     try {

@@ -4,6 +4,38 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] — pre-G1 latency / fail-fast closure (engineering candidate)
+
+Not a feature iteration. No model change, no context-budget change, no prompt
+change, no streaming, no automatic retry, no telemetry.
+
+### Added
+- **Provider hard deadline.** Every provider call runs under a configurable
+  `AbortController` deadline (`AI_PROVIDER_TIMEOUT_MS`, default **8000 ms**,
+  validated to an integer within [1000, 30000], falling back to the default on
+  any invalid value). The signal reaches the `openai-compatible` `fetch`, so a
+  hung request is actually cancelled.
+- **Distinct `provider_timeout` error** (HTTP 504), never folded into
+  `provider_unavailable`; raw provider errors are never forwarded to the
+  extension.
+- **Extension fail-safe deadline** (`BACKEND_REQUEST_TIMEOUT_MS = 12000`),
+  intentionally longer than the provider deadline so the backend normally
+  answers `provider_timeout` first. Browser-side expiry surfaces as
+  `backend_timeout`, still distinct from `network`.
+- **Local-only performance instrumentation**: `[perf] capture_ms`,
+  `[perf] assist_request_ms`, `[perf] backend_request_ms`,
+  `[perf] provider_ms result=ok|timeout|error`, `[perf] total_ms` — durations
+  only, to the local console; no question/page/session/URL/identifier content;
+  not telemetry, never persisted, never sent.
+
+### Changed
+- **Participant-visible errors are friendly Spanish messages**, never technical
+  codes or raw `Error` text (codes remain in the local console only).
+- A failed/aborted turn keeps the displayed conversation intact, appends no fake
+  assistant answer, produces no duplicate user turn, and re-enables the
+  controls for a manual retry only. An aborted request's late response can no
+  longer reach the UI (the fetch is cancelled at the deadline).
+
 ## [0.0.7-p0-g1-baseline] - 2026-09-04
 
 ### Status

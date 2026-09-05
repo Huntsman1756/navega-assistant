@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createController, DEFAULT_QUESTION, type ControllerElements, type ChromeFacade } from "./controller";
 import type { AccessibleDOMSnapshot, HelpSession, PageContext } from "@guided-web/protocol";
 import type { AssistResultMessage } from "../shared/messages";
@@ -190,10 +190,10 @@ describe("request lifecycle", () => {
     expect(calls.assist).toBe(1);
   });
 
-  it("preserves previous turns and shows an error without inventing an answer", async () => {
+  it("preserves previous turns and shows a friendly error without inventing an answer", async () => {
     let failNext = false;
     const { facade } = makeFacade({
-      result: () => (failNext ? errResult("red") : okResult("primera ayuda")),
+      result: () => (failNext ? errResult("provider_timeout") : okResult("primera ayuda")),
     });
     const els = buildElements();
     const c = createController(facade, els);
@@ -204,9 +204,109 @@ describe("request lifecycle", () => {
     expect(text).toContain("primera ayuda");
     // No invented assistant response for the failed turn; error is shown.
     expect(text).not.toContain("ayuda-tweet");
-    expect(els.status.textContent).toContain("red");
+    // Friendly message is shown; the technical code stays out of the UI.
+    expect(els.status.textContent).toContain("tardando más de lo normal");
+    expect(els.status.textContent).not.toContain("provider_timeout");
     // The finished history still has exactly the two answered turns.
     expect(c.currentSession().turns).toHaveLength(2);
+  });
+
+  it("maps each backend error code to a friendly, non-technical message", async () => {
+    const cases: Array<[string, string]> = [
+      ["network", "No pude conectar con el asistente"],
+      ["backend_timeout", "no respondió a tiempo"],
+      ["provider_timeout", "Está tardando más de lo normal"],
+      ["provider_unavailable", "no está disponible ahora mismo"],
+      ["invalid_model_output", "No pude interpretar la respuesta"],
+      ["backend_error", "Algo salió mal"],
+      ["something_new", "Algo salió mal"],
+    ];
+    for (const [code, friendly] of cases) {
+      const { facade } = makeFacade({ result: () => errResult(code) });
+      const els = buildElements();
+      const c = createController(facade, els);
+      await c.askHelp();
+      expect(els.status.textContent).toContain(friendly);
+      // The raw technical code is never rendered to the user.
+      expect(els.status.textContent).not.toContain(code);
+    }
+  });
+
+  it("re-enables the controls after a failed (timeout) request so the user can retry manually", async () => {
+    const { facade } = makeFacade({ result: () => errResult("provider_timeout") });
+    const els = buildElements();
+    const c = createController(facade, els);
+    await c.askHelp();
+    expect(els.status.textContent).toContain("Inténtalo de nuevo");
+    expect(els.helpButton.disabled).toBe(false);
+    expect(els.newHelpButton.disabled).toBe(false);
+  });
+
+  it("a failed turn adds no assistant turn and no duplicate user turn to the session", async () => {
+    const { facade, calls } = makeFacade({ result: () => errResult("backend_timeout") });
+    const els = buildElements();
+    const c = createController(facade, els);
+    els.input.value = "¿Cómo pago este pedido?";
+    await c.askHelp();
+    // Nothing was persisted for the failed turn (no fake answer, no user turn).
+    expect(c.currentSession().turns).toHaveLength(0);
+    expect(calls.save).toBe(0);
+    // The failed question appears on screen exactly ONCE (ephemeral pending).
+    const occurrences = (conversationText(els).match(/¿Cómo pago este pedido\?/g) ?? []).length;
+    expect(occurrences).toBe(1);
+
+    // A manual retry that succeeds produces exactly ONE user turn + ONE answer.
+    facade.sendAssist = async (req) => okResult(`ayuda-${req.question}`);
+    els.input.value = "¿Cómo pago este pedido?";
+    await c.askHelp();
+    const userTurns = c.currentSession().turns.filter((t) => t.role === "user");
+    const assistantTurns = c.currentSession().turns.filter((t) => t.role === "assistant");
+    expect(userTurns).toHaveLength(1);
+    expect(assistantTurns).toHaveLength(1);
+  });
+
+  it("never renders raw Error text from an unexpected crash to the user", async () => {
+    const { facade } = makeFacade();
+    facade.getActiveTab = async () => {
+      throw new Error("chrome.tabs.query internal failure https://secret-origin.example");
+    };
+    const els = buildElements();
+    const c = createController(facade, els);
+    await c.askHelp();
+    expect(els.status.textContent).toBe("Algo salió mal. Inténtalo de nuevo.");
+    expect(els.status.textContent).not.toContain("chrome.tabs.query");
+    expect(els.status.textContent).not.toContain("secret-origin");
+  });
+});
+
+describe("local performance instrumentation (no telemetry, no content)", () => {
+  it("records capture_ms, assist_request_ms and total_ms with no question/page/session text", async () => {
+    const logged: string[] = [];
+    const logSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      logged.push(args.map(String).join(" "));
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { facade } = makeFacade();
+      const els = buildElements();
+      const c = createController(facade, els);
+      els.input.value = "mi duda confidencial 4711";
+      await c.askHelp();
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+    expect(logged.some((l) => /\[perf\] capture_ms=\d+/.test(l))).toBe(true);
+    expect(logged.some((l) => /\[perf\] assist_request_ms=\d+/.test(l))).toBe(true);
+    expect(logged.some((l) => /\[perf\] total_ms=\d+/.test(l))).toBe(true);
+    for (const line of logged.filter((l) => l.startsWith("[perf]") || l.startsWith("[navega]"))) {
+      expect(line).not.toContain("mi duda confidencial");
+      expect(line).not.toContain("Sign in");
+      expect(line).not.toContain("example.com");
+      expect(line).not.toMatch(/s-[a-z0-9]+/i); // no session ids
+    }
   });
 });
 

@@ -131,6 +131,81 @@ Configuration is environment-based via `.env`. The extension MUST NEVER receive
 
 ---
 
+## 4bis. Latency, fail-fast deadlines and error taxonomy (CURRENTLY IMPLEMENTED)
+
+Real-provider measurements (qwen3.6 via an OpenAI-compatible endpoint, 20
+samples): p50 ~0.7 s, p95 ~1.7 s, with a heavy-tail outlier (~11.5 s). The
+median is healthy; the risk is an unbounded outlier leaving the user waiting
+forever at “Preguntando al asistente…”. The closure is **deadlines + honest
+errors**, NOT model/context changes, NOT retries, NOT streaming.
+
+### Provider deadline (backend)
+
+- Every provider call runs under a hard `AbortController` deadline, applied by
+  the backend and passed to `provider.assist(request, signal)`. The
+  `openai-compatible` provider forwards the signal to `fetch`, so a hung
+  request is actually cancelled (socket released).
+- Configured via `AI_PROVIDER_TIMEOUT_MS`, **default 8000 ms**, defensively
+  validated: it must be an integer between 1000 and 30000; anything else logs a
+  warning and falls back to 8000 (a bad `.env` can never disable fail-fast).
+- On expiry the route answers **HTTP 504 `{ "error": "provider_timeout" }`** —
+  distinct from `provider_unavailable` (502) and `invalid_model_output` (502).
+  The deadline timer is always cleared after success or failure.
+- **No automatic retry.** A timed-out request is final; the user may retry
+  manually. **No streaming** (not justified at p50 < 1.2 s).
+
+### Extension fail-safe deadline (browser side)
+
+- The service worker wraps the extension → localhost request with its own
+  deadline: `BACKEND_REQUEST_TIMEOUT_MS = 12000`. It is deliberately LONGER
+  than the provider deadline (8000) so the backend almost always wins the race
+  and returns a precise `provider_timeout`; the browser deadline only fires if
+  the backend itself is hung or unreachable.
+- If OUR deadline fires first → `backend_timeout`. A connection failure remains
+  `network`. Both are distinguishable from a backend-returned
+  `provider_timeout`.
+- The abort also cancels the fetch, so a late backend answer can never reach
+  the UI after a timeout.
+
+### Machine-readable error taxonomy
+
+| Code                  | Where produced      | HTTP | Meaning                                |
+| --------------------- | ------------------- | ---- | -------------------------------------- |
+| `invalid_request`     | backend             | 400  | Schema validation failed               |
+| `provider_timeout`    | backend             | 504  | Provider exceeded its hard deadline    |
+| `provider_unavailable`| backend             | 502  | Provider call failed (raw error NEVER forwarded) |
+| `invalid_model_output`| backend             | 502  | Output was not JSON / failed the schema |
+| `backend_timeout`     | extension (SW)      | —    | Local backend did not answer within 12 s |
+| `network`             | extension (SW)      | —    | Local backend unreachable              |
+| `backend_error`       | extension (SW)      | —    | Unexpected backend shape/status        |
+
+### Participant-visible errors
+
+G1 participants never see codes or raw error text. The side panel maps each
+code to a short Spanish message (technical code goes to the local console
+only): `provider_timeout` → “Está tardando más de lo normal. Inténtalo de
+nuevo.”; `network` → “No pude conectar con el asistente. Inténtalo de
+nuevo.”; `provider_unavailable` → “El asistente no está disponible ahora
+mismo. Inténtalo de nuevo.”; `invalid_model_output` → “No pude interpretar la
+respuesta. Inténtalo de nuevo.”; anything unexpected → “Algo salió mal.
+Inténtalo de nuevo.” A failed turn never invents an assistant answer, never
+duplicates the user turn, and re-enables the controls.
+
+### Local-only performance instrumentation (NOT telemetry)
+
+Plain `console` logs of durations, with no question, page content, session
+contents, URL, user id or credential. Nothing is persisted or sent anywhere:
+
+```text
+[perf] capture_ms=180              (side panel: capture start → PageContext ready)
+[perf] assist_request_ms=920       (side panel: send → backend response received)
+[perf] backend_request_ms=905      (service worker: fetch → response/error)
+[perf] provider_ms=870 result=ok   (backend: around provider.assist; ok|timeout|error)
+[perf] total_ms=1130               (side panel: question submitted → final state rendered)
+```
+
+---
+
 ## 5. Future concepts (documented, NOT implemented in P0)
 
 | Concept | Intended role |
