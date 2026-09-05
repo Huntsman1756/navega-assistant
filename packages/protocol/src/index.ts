@@ -127,7 +127,9 @@ export const PageContextSchema = z
     frames: z.array(FrameSnapshotSchema).max(8),
     truncated: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .refine(context => JSON.stringify(context).length <= 16000, "serialized context exceeds 16000 UTF-16 code units")
+  .refine(context => context.frames.reduce((n, f) => n + (f.snapshot?.elements.length ?? 0), 0) <= 220, "too many total context elements");
 export type PageContext = z.infer<typeof PageContextSchema>;
 
 /**

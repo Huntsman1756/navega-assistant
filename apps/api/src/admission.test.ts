@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { serve } from "@hono/node-server";
+import { startLocalServer } from "./server";
 import { createApp, MAX_BODY_BYTES } from "./routes";
 
 const request = { protocolVersion: 3, mode: "DOM_ONLY", question: "Help", context: { schemaVersion: 1, topFrameId: 0, frames: [] }, session: { schemaVersion: 1, sessionId: "s", turns: [] } };
@@ -36,7 +36,7 @@ it("bounds underlying calls even when timed-out provider ignores abort", async (
   expect(assist).toHaveBeenCalledTimes(2);
 });
 it("listens on an explicit IPv4 loopback socket", async () => {
-  const server = serve({ fetch: createApp({ name: "mock", assist: async () => good }, "mock").fetch, hostname: "127.0.0.1", port: 0 });
+  const server = startLocalServer(createApp({ name: "mock", assist: async () => good }, "mock"), 0);
   await new Promise<void>(resolve => server.once("listening", resolve));
   expect(server.address()).toMatchObject({ address: "127.0.0.1" });
   await new Promise<void>((resolve, reject) => server.close(err => err ? reject(err) : resolve()));

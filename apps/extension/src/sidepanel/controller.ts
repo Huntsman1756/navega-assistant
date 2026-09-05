@@ -49,7 +49,7 @@ const FRIENDLY_ERRORS: Record<string, string> = {
 const GENERIC_ERROR = "Algo salió mal. Inténtalo de nuevo.";
 
 function friendlyError(error: string): string {
-  console.warn(`[navega] assist_error code=${error}`);
+  console.warn(`[navega] assist_error code=${error in FRIENDLY_ERRORS ? error : "backend_error"}`);
   return FRIENDLY_ERRORS[error] ?? GENERIC_ERROR;
 }
 
@@ -208,6 +208,8 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
     inFlight = true;
     els.helpButton.disabled = true;
     els.newHelpButton.disabled = true;
+    els.input.disabled = true;
+    els.input.value = "";
     hidePermission();
     clearPending();
 
@@ -255,6 +257,7 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
       logPerf("total_ms", tTotal);
       inFlight = false;
       if (pendingUserText) els.input.value = pendingUserText;
+      els.input.disabled = false;
       els.helpButton.disabled = false;
       els.newHelpButton.disabled = false;
     }

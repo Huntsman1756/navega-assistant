@@ -94,7 +94,7 @@ export function buildPageContext(topFrameId: number, inputs: FrameInput[]): Page
   });
 
   const resolvedTop = ordered[0] ? topFrameId : frames[0]?.frameId ?? 0;
-  const context: PageContext = { schemaVersion: 1, topFrameId: resolvedTop, frames };
+  const context: PageContext = { schemaVersion: 1, topFrameId: resolvedTop, frames, truncated: ordered.length > MAX_FRAMES };
   return boundContext(context);
 }
 

@@ -1,4 +1,4 @@
-import { serve } from "@hono/node-server";
+import { startLocalServer } from "./server";
 import { loadConfig } from "./config";
 import { createApp } from "./routes";
 
@@ -7,7 +7,10 @@ const app = createApp(config.provider, config.providerName, config.model, {
   providerTimeoutMs: config.providerTimeoutMs,
 });
 
-serve({ fetch: app.fetch, port: config.port, hostname: "127.0.0.1" }, (info) => {
+const server = startLocalServer(app, config.port);
+server.on("listening", () => {
+  const info = server.address();
+  if (!info || typeof info === "string") return;
   console.log(
     `Guided Web Assistant API listening on http://127.0.0.1:${info.port} (provider: ${config.providerName})`,
   );

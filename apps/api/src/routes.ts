@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 
-export const MAX_BODY_BYTES = 256 * 1024;
+export const MAX_BODY_BYTES = 512 * 1024;
 export const MAX_PROVIDER_CALLS = 2;
 import type { AIProvider } from "@guided-web/provider";
 import {

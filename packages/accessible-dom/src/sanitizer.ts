@@ -20,10 +20,12 @@ export function classifySecretField(el: Element): SecretFieldKind {
   const name = (el.getAttribute("name") || "").toLowerCase();
   const id = (el.getAttribute("id") || "").toLowerCase();
   const placeholder = (el.getAttribute("placeholder") || "").toLowerCase();
-  const label = el.getAttribute("aria-label") || "";
+  const labels = (el as HTMLInputElement).labels;
+  const label = [el.getAttribute("aria-label") || "", ...Array.from(labels ?? [], l => l.textContent || "")].join(" ");
   const combined = `${name} ${id} ${placeholder} ${label}`.replace(/[_-]/g, " ").toLowerCase();
-  if (/api\s*key|secret|token|recovery|backup\s*code|password|contrase[?n]a/.test(combined)) return "secret";
+  if (/api\s*key|secret|token|recovery|backup\s*code|password|contrase[\u00f1n]a/.test(combined)) return "secret";
 
+  if (autocomplete.includes("password")) return "password";
   if (type === "password") return "password";
   if (autocomplete.includes("one-time-code") || autocomplete.includes("otp")) return "otp";
   if (autocomplete.includes("cc-csc") || autocomplete.includes("cc-cvv")) return "card";
