@@ -41,4 +41,3 @@ it("listens on an explicit IPv4 loopback socket", async () => {
   expect(server.address()).toMatchObject({ address: "127.0.0.1" });
   await new Promise<void>((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
 });
-

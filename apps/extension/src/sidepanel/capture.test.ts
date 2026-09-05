@@ -201,6 +201,6 @@ it("carries child-frame classified values to the complete outbound boundary with
   const context = await run;
   expect(JSON.stringify(context).includes("SECRET_CHILD_X91")).toBe(false);
   const payload = sanitizeOutbound(context, "Help SECRET_CHILD_X91", { schemaVersion: 1, sessionId: "s", turns: [] });
-  expect(payload.question).toBe("Help ");
+  expect(payload.question).toBe("Help");
   expect(JSON.stringify(payload).includes("SECRET_CHILD_X91")).toBe(false);
 });

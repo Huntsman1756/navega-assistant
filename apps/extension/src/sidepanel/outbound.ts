@@ -13,6 +13,7 @@ export function sanitizeOutbound(context: PageContext, question: string, session
   const raw = { protocolVersion: 3, mode: "DOM_ONLY", context, question, session };
   const heuristic = JSON.parse(JSON.stringify(raw, (_key, value: unknown) => typeof value === "string" ? redactSecretValues(value) : value));
   const clean = sanitizeStrings(heuristic, values);
+  clean.question = clean.question.trim();
   clean.context = boundContext(clean.context);
   const payload = AssistRequestSchema.parse(clean);
   const serialized = JSON.stringify(payload);
