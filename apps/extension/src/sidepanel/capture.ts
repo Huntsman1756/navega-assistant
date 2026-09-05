@@ -22,7 +22,7 @@
  *   permission UX by the caller).
  */
 import type { AccessibleDOMSnapshot, PageContext } from "@guided-web/protocol";
-import { buildPageContext, type FrameInput } from "@guided-web/accessible-dom";
+import { buildPageContext, MAX_FRAMES, type FrameInput } from "@guided-web/accessible-dom";
 
 export const SNAPSHOT_MESSAGE = "GWA_SNAPSHOT";
 export const SNAPSHOT_TIMEOUT_MS = 6000;
@@ -94,6 +94,9 @@ export async function capturePageContext(env: CaptureEnvironment): Promise<PageC
     enumerated = [{ frameId: TOP_FRAME_ID, parentFrameId: -1, url: "" }];
   }
 
+  const omittedFrames = enumerated.length > MAX_FRAMES;
+  enumerated = [...enumerated.filter(f => f.frameId === TOP_FRAME_ID), ...enumerated.filter(f => f.frameId !== TOP_FRAME_ID)].slice(0, MAX_FRAMES);
+
   const collected = new Map<number, { frameId: number; origin: string; snapshot: AccessibleDOMSnapshot }>();
   let settleTimer: ReturnType<typeof setTimeout> | undefined;
   let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
@@ -109,6 +112,7 @@ export async function capturePageContext(env: CaptureEnvironment): Promise<PageC
       if (msg.captureToken !== token) return;
       if (msg.type !== SNAPSHOT_MESSAGE || !msg.snapshot) return;
       const frameId = msg.senderFrameId ?? TOP_FRAME_ID;
+      if (settled || !enumerated.some(f => f.frameId === frameId)) return;
       const origin = msg.senderOrigin || originOf(msg.senderUrl ?? "") || "";
       collected.set(frameId, { frameId, origin, snapshot: msg.snapshot });
     });
@@ -159,7 +163,9 @@ export async function capturePageContext(env: CaptureEnvironment): Promise<PageC
         return;
       }
 
-      resolve(buildPageContext(topFrameId, inputs));
+      const context = buildPageContext(topFrameId, inputs);
+      if (omittedFrames) context.truncated = true;
+      resolve(context);
     };
 
     const start = Date.now();
@@ -174,7 +180,7 @@ export async function capturePageContext(env: CaptureEnvironment): Promise<PageC
             // Best effort; a missing token only means this frame cannot be
             // correlated and is therefore marked unavailable.
           }
-          await env.injectExtractor(frame.frameId);
+          if (!settled) await env.injectExtractor(frame.frameId);
         }),
       );
       const elapsed = Date.now() - start;

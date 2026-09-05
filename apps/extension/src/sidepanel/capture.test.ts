@@ -180,3 +180,13 @@ function byFrame(ctx: { frames: Array<{ frameId: number; accessible: boolean; sn
   expect(f?.accessible).toBe(true);
   expect(f?.snapshot?.snapshotId).toBe(`s-${expectedId}`);
 }
+
+it("limits frame work initiation, keeping the top first", async () => {
+  const w = makeEnv({ frames: Array.from({ length: 1000 }, (_, frameId) => ({ frameId, parentFrameId: frameId === 0 ? -1 : 0, url: "https://top.example" })) });
+  const run = capturePageContext({ ...w.env, settleMs: 60 });
+  await settle(20);
+  w.send({ type: "GWA_SNAPSHOT", snapshot: snapshot("top"), senderTabId: 1, senderFrameId: 0 });
+  const ctx = await run;
+  expect(w.injected).toEqual([0,1,2,3,4,5,6,7]);
+  expect(ctx.truncated).toBe(true);
+});

@@ -36,48 +36,19 @@ export const MAX_FRAMES = 8;
 export const MAX_TOTAL_CONTEXT_ELEMENTS = 220;
 export const MAX_TOTAL_CONTEXT_CHARACTERS = 16000;
 
-/** Serialized-cost constants; deliberately approximate but conservative. */
-const ELEMENT_OVERHEAD = 100;
-const ELEMENT_STATE_OVERHEAD = 80;
-const VISIBLE_TEXT_OVERHEAD = 24;
-const FRAME_OVERHEAD = 90;
-const PAGE_META_OVERHEAD = 60;
-const SNAPSHOT_WRAPPER_OVERHEAD = 200;
-
-/** Approximate serialized cost of a single element (over-estimate). */
-export function estimateElementCost(el: AccessibleElement): number {
-  let cost = ELEMENT_OVERHEAD + el.id.length + el.tag.length;
-  if (el.role) cost += el.role.length;
-  if (el.accessibleName) cost += el.accessibleName.length;
-  if (el.state) cost += ELEMENT_STATE_OVERHEAD;
-  return cost;
-}
-
-/** Approximate serialized cost of one visible-text entry (over-estimate). */
-export function estimateVisibleTextCost(text: string): number {
-  return text.length + VISIBLE_TEXT_OVERHEAD;
-}
-
-/** Approximate serialized cost of a frame (metadata + page + snapshot wrapper). */
+/** Exact JSON UTF-16 code-unit costs (not tokens or UTF-8 bytes). */
+export function estimateElementCost(el: AccessibleElement): number { return JSON.stringify(el).length + 1; }
+export function estimateVisibleTextCost(text: string): number { return JSON.stringify(text).length + 1; }
 export function estimateFrameCost(frame: FrameSnapshot): number {
-  let cost = FRAME_OVERHEAD;
-  if (frame.origin) cost += frame.origin.length;
-  if (frame.unavailableReason) cost += frame.unavailableReason.length;
-  const page = frame.snapshot?.page;
-  if (page) {
-    cost +=
-      (page.url?.length ?? 0) +
-      (page.origin?.length ?? 0) +
-      (page.title?.length ?? 0) +
-      PAGE_META_OVERHEAD;
-  }
-  if (frame.snapshot) {
-    // The snapshot envelope (schemaVersion, snapshotId, elements[]/visibleText[]
-    // brackets, per-element arrays) has a fixed cost that is not captured by the
-    // per-element/per-text costs added in boundContext.
-    cost += SNAPSHOT_WRAPPER_OVERHEAD + frame.snapshot.snapshotId.length;
-  }
-  return cost;
+  return JSON.stringify({ ...frame, snapshot: frame.snapshot ? { ...frame.snapshot, elements: [], visibleText: [] } : undefined }).length;
+}
+
+export function reducedUrl(raw: string): string {
+  try {
+    const url = new URL(raw);
+    if (!['http:', 'https:'].includes(url.protocol)) return '';
+    return `${url.origin}${url.pathname}`.slice(0, 1000);
+  } catch { return ''; }
 }
 
 /**
@@ -127,87 +98,55 @@ export function buildPageContext(topFrameId: number, inputs: FrameInput[]): Page
   return boundContext(context);
 }
 
-/**
- * Deterministically enforce the total context budget across all frames.
- *
- * Frames are processed in priority order (top first, then accessible,
- * then unavailable). Inside a frame its own per-snapshot budgets were already
- * applied by the extractor. The global budget here reserves each frame's
- * metadata cost, then keeps high-priority ELEMENTS before low-priority
- * VISIBLE TEXT, so large article/notice text can never crowd out a relevant
- * control. Child frames consume the remaining budget.
- *
- * The accounting is an approximate serialized-character cost (not exact token
- * counts) that deliberately over-counts so the real serialized payload stays
- * bounded. It is deterministic for identical input.
+/** Exact serialized PageContext budget, including metadata, escaping and truncation flag.
+ * Controls are admitted before prose, deterministically. Capture work has separate limits.
  */
-export function boundContext(
-  context: PageContext,
-  maxTotalElements = MAX_TOTAL_CONTEXT_ELEMENTS,
-  maxTotalCharacters = MAX_TOTAL_CONTEXT_CHARACTERS,
-): PageContext {
-  const frames = context.frames.map((frame) => {
-    if (!frame.snapshot) return frame;
-    return {
-      ...frame,
-      snapshot: {
-        ...frame.snapshot,
-        elements: [...frame.snapshot.elements],
-        visibleText: [...(frame.snapshot.visibleText ?? [])],
-      },
+export function boundContext(context: PageContext, maxTotalElements = MAX_TOTAL_CONTEXT_ELEMENTS, maxTotalCharacters = MAX_TOTAL_CONTEXT_CHARACTERS): PageContext {
+  if (maxTotalCharacters < 100) throw new Error("context budget too small");
+  const source = context.frames.slice(0, MAX_FRAMES);
+  const out: PageContext = { schemaVersion: 1, topFrameId: context.topFrameId, frames: [], truncated: true };
+  const fits = () => JSON.stringify(out).length <= maxTotalCharacters - 1;
+  for (const f of source) {
+    const snapshot = f.snapshot;
+    const next: FrameSnapshot = {
+      frameId: f.frameId, parentFrameId: f.parentFrameId, accessible: f.accessible,
+      origin: f.origin?.slice(0, 1000), unavailableReason: f.unavailableReason?.slice(0, 100),
+      snapshot: snapshot ? {
+        schemaVersion: 1, snapshotId: snapshot.snapshotId.slice(0, 64),
+        page: { url: reducedUrl(snapshot.page.url), origin: snapshot.page.origin.slice(0, 1000), title: snapshot.page.title.slice(0, 300) },
+        elements: [], visibleText: [], truncated: snapshot.truncated,
+      } : undefined,
     };
-  });
-
-  let usedElements = 0;
-  let budget = maxTotalCharacters;
-
-  // First pass: reserve frame metadata (frames are kept even when content is
-  // trimmed; an unavailable frame contributes only its metadata).
-  const boundedFrames = frames.map((frame) => {
-    budget = Math.max(0, budget - estimateFrameCost(frame));
-    if (!frame.snapshot) return frame;
-    // Snapshot content is filled in the passes below.
-    return { ...frame, snapshot: { ...frame.snapshot, elements: [], visibleText: [] } };
-  });
-
-  // Phase 1: elements (controls) take priority over visible text, across frames
-  // in priority order. Each frame's own elements are already relevance-ranked.
-  if (budget > 0) {
-    for (let i = 0; i < frames.length; i += 1) {
-      const src = frames[i]?.snapshot;
-      if (!src) continue;
-      const dst = boundedFrames[i]?.snapshot as AccessibleDOMSnapshot | undefined;
-      if (!dst) continue;
-      const kept: AccessibleElement[] = [];
-      for (const el of src.elements) {
-        if (usedElements + 1 > maxTotalElements) break;
-        const cost = estimateElementCost(el);
-        if (cost > budget) break;
-        budget -= cost;
-        kept.push(el);
-        usedElements += 1;
-      }
-      dst.elements = kept;
+    out.frames.push(next);
+    if (!fits()) { out.frames.pop(); break; }
+  }
+  let count = 0;
+  for (let i = 0; i < out.frames.length; i++) {
+    const dst = out.frames[i]?.snapshot;
+    if (!dst) continue;
+    for (const el of source[i]?.snapshot?.elements.slice(0, 200) ?? []) {
+      if (count >= Math.min(maxTotalElements, MAX_TOTAL_CONTEXT_ELEMENTS)) break;
+      const bounded = { ...el, id: el.id.slice(0, 64), tag: el.tag.slice(0, 64), role: el.role?.slice(0, 64), accessibleName: el.accessibleName?.slice(0, 160) };
+      dst.elements.push(bounded);
+      if (!fits()) { dst.elements.pop(); break; }
+      count++;
     }
   }
-
-  // Phase 2: visible text (strictly lower priority than any control).
-  if (budget > 0) {
-    for (let i = 0; i < frames.length; i += 1) {
-      const src = frames[i]?.snapshot;
-      if (!src) continue;
-      const dst = boundedFrames[i]?.snapshot as AccessibleDOMSnapshot | undefined;
-      if (!dst) continue;
-      const kept: string[] = [];
-      for (const text of src.visibleText ?? []) {
-        const cost = estimateVisibleTextCost(text);
-        if (cost > budget) break;
-        budget -= cost;
-        kept.push(text);
-      }
-      dst.visibleText = kept;
+  for (let i = 0; i < out.frames.length; i++) {
+    const dst = out.frames[i]?.snapshot;
+    if (!dst) continue;
+    for (const text of source[i]?.snapshot?.visibleText?.slice(0, 40) ?? []) {
+      if (text.length > 300) continue;
+      dst.visibleText!.push(text);
+      if (!fits()) { dst.visibleText!.pop(); break; }
     }
   }
-
-  return { ...context, frames: boundedFrames };
+  // Compare content, not property order; conservative true also records metadata reduction.
+  out.truncated = context.truncated === true || source.length !== context.frames.length ||
+    out.frames.length !== source.length || out.frames.some((f, i) => {
+      const a = f.snapshot, b = source[i]?.snapshot;
+      return a && b && (a.truncated || a.elements.length !== b.elements.length ||
+        a.visibleText?.length !== (b.visibleText?.length ?? 0) || a.page.title !== b.page.title || a.page.url !== b.page.url);
+    });
+  return out;
 }

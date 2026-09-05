@@ -106,7 +106,7 @@ export function scoreCandidate(c: CandidateAnalysis): number {
 export function dedupeKey(c: CandidateAnalysis): string {
   const name = (c.dedupeText || c.accessibleName || "").trim().toLowerCase();
   const role = (c.role ?? c.tag).toLowerCase();
-  return name ? `${role}::${name}` : "";
+  return name ? `${role}::${name}::${JSON.stringify(c.state ?? {})}` : "";
 }
 
 export interface RankedCandidate {

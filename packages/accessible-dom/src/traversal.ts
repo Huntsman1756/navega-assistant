@@ -21,31 +21,36 @@
  * Each element is yielded at most once. Open shadow roots are traversed;
  * closed shadow roots (whose `shadowRoot` is null) are naturally ignored.
  */
+export const MAX_CAPTURE_NODES = 10000;
+
 export function* iterElements(root: Document | ShadowRoot | Element): Generator<Element> {
-  const seen = new Set<Element>();
-
-  function* walk(r: Document | ShadowRoot | Element): Generator<Element> {
-    const nodes = (r as Document).querySelectorAll("*");
-    for (const el of nodes) {
-      if (!(el instanceof Element)) continue;
-      if (seen.has(el)) continue;
-      seen.add(el);
-      yield el;
-      const open = (el as HTMLElement & { shadowRoot?: ShadowRoot | null }).shadowRoot;
-      if (open) yield* walk(open);
-    }
+  // Native sibling traversal avoids allocating querySelectorAll over an unbounded DOM.
+  const stack: Element[] = [];
+  let current: Element | null = root instanceof Element ? root : root.firstElementChild;
+  let visited = 0;
+  while (current) {
+    if (++visited > MAX_CAPTURE_NODES) throw new Error("capture work budget exceeded");
+    yield current;
+    if (current.nextElementSibling && current !== root) stack.push(current.nextElementSibling);
+    if (current.shadowRoot?.firstElementChild) {
+      if (current.firstElementChild) stack.push(current.firstElementChild);
+      current = current.shadowRoot.firstElementChild;
+    } else current = current.firstElementChild ?? stack.pop() ?? null;
   }
+}
 
-  if (root instanceof Element) {
-    if (!seen.has(root)) {
-      seen.add(root);
-      yield root;
-    }
-    const open = (root as HTMLElement & { shadowRoot?: ShadowRoot | null }).shadowRoot;
-    if (open) yield* walk(open);
+/** Bounded ordinary + open-shadow host ancestry, including self. */
+export function ancestorContext(el: Element): { isInNavigation: boolean; isInDialog: boolean } {
+  let isInNavigation = false, isInDialog = false;
+  let current: Element | null = el;
+  for (let depth = 0; current && depth < 64; depth++) {
+    const role = current.getAttribute("role");
+    isInNavigation ||= current.localName === "nav" || role === "navigation";
+    isInDialog ||= current.localName === "dialog" || role === "dialog" || role === "alertdialog" || current.getAttribute("aria-modal") === "true";
+    const root = current.getRootNode();
+    current = current.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
   }
-
-  yield* walk(root);
+  return { isInNavigation, isInDialog };
 }
 
 /** Convenience wrapper returning all traversed elements in order. */

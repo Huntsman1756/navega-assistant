@@ -18,13 +18,13 @@
  *   represented only by their role and label/state, never their value. The
  *   sanitizer remains the authoritative data-leak boundary.
  */
+import { boundContext, reducedUrl } from "./frames";
 import type { AccessibleDOMSnapshot, AccessibleElement, ElementState } from "@guided-web/protocol";
 import { computeAccessibleName, getRole, isDisabled, isInaccessible } from "dom-accessibility-api";
 import { classifySecretField, shouldExcludeElement, redactSensitiveRuns, redactSensitiveVisibleText } from "./sanitizer";
-import { iterElements } from "./traversal";
+import { iterElements, ancestorContext } from "./traversal";
 import {
   orderCandidates,
-  applyCharacterBudget,
   DEFAULT_BUDGETS,
   type CandidateAnalysis,
   type BudgetSettings,
@@ -202,14 +202,13 @@ function analyze(el: Element, domIndex: number, role: string | undefined): Candi
     isFocused: rootActiveElement(el) === el,
     isAlertOrError:
       role === "alert" || role === "alertdialog" || el.getAttribute("aria-live") === "assertive" || el.getAttribute("aria-invalid") === "true",
-    isInDialog:
-      role === "dialog" || role === "alertdialog" || el.getAttribute("aria-modal") === "true",
+    isInDialog: ancestorContext(el).isInDialog,
     isStateful:
       el.hasAttribute("aria-checked") ||
       el.hasAttribute("aria-expanded") ||
       el.hasAttribute("aria-selected"),
     isLandmark: role ? LANDMARK_ROLES.has(role) : false,
-    isNavigation: role === "navigation" || tag === "nav",
+    isNavigation: ancestorContext(el).isInNavigation,
     isFooterLike:
       tag === "footer" || role === "contentinfo" || /(^|\b)(legal|privacy|terms|copyright|©|theme)(\b|$)/.test(lcName),
     isFormField: isFormField(el, role),
@@ -286,13 +285,7 @@ export function extractAccessibleDOMSnapshot(
 
   const candidates = collectCandidates(root);
   const ordered = orderCandidates(candidates, budgets.maxElements);
-  const bounded = applyCharacterBudget(
-    ordered,
-    budgets.maxTotalCharacters,
-    (c) => (c.accessibleName?.length ?? 0) + (c.tag?.length ?? 0) + 8,
-  );
-
-  const elements: AccessibleElement[] = bounded.map((r, i) => {
+  const elements: AccessibleElement[] = ordered.map((r, i) => {
     const a = r.analysis;
     return {
       id: `el-${i}`,
@@ -304,11 +297,16 @@ export function extractAccessibleDOMSnapshot(
     };
   });
 
-  return {
+  const snapshot: AccessibleDOMSnapshot = {
     schemaVersion: 1,
     snapshotId,
-    page: { url, origin, title: doc.title || "" },
+    page: { url: reducedUrl(url), origin, title: (doc.title || "").slice(0, 300) },
     elements,
     visibleText: collectVisibleText(root, budgets.maxVisibleText),
   };
+  const bounded = boundContext({ schemaVersion: 1, topFrameId: 0, frames: [{ frameId: 0, accessible: true, snapshot }] }, budgets.maxElements, budgets.maxTotalCharacters);
+  const result = bounded.frames[0]?.snapshot;
+  if (!result) throw new Error("snapshot metadata exceeds budget");
+  result.truncated = bounded.truncated;
+  return result;
 }
