@@ -26,7 +26,7 @@ export function parseProviderTimeoutMs(raw: string | undefined): number {
     value > MAX_PROVIDER_TIMEOUT_MS
   ) {
     console.warn(
-      `[config] invalid AI_PROVIDER_TIMEOUT_MS "${raw}" (expected an integer between ` +
+      `[config] invalid AI_PROVIDER_TIMEOUT_MS (expected an integer between ` +
         `${MIN_PROVIDER_TIMEOUT_MS} and ${MAX_PROVIDER_TIMEOUT_MS}); using default ${DEFAULT_PROVIDER_TIMEOUT_MS}`,
     );
     return DEFAULT_PROVIDER_TIMEOUT_MS;
@@ -50,7 +50,8 @@ export interface ApiConfig {
  * sent to the browser extension.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
-  const providerName = env.AI_PROVIDER || "mock";
+  const providerName = env.AI_PROVIDER?.trim();
+  if (!providerName) throw new Error("AI_PROVIDER must explicitly select mock or openai-compatible");
   let provider: AIProvider;
   let model: string | undefined;
 
@@ -73,7 +74,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       }
       break;
     default:
-      throw new Error(`Unknown AI_PROVIDER "${providerName}". Use "mock" or "openai-compatible".`);
+      throw new Error('Unknown AI_PROVIDER. Use "mock" or "openai-compatible".');
   }
 
   const port = Number(env.PORT || 8787);

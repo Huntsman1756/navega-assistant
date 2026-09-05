@@ -52,3 +52,8 @@ describe("loadConfig provider timeout wiring", () => {
     warn.mockRestore();
   });
 });
+
+it("rejects missing or incomplete real-provider configuration explicitly", () => {
+  expect(() => loadConfig({})).toThrow("AI_PROVIDER must explicitly");
+  expect(() => loadConfig({ AI_PROVIDER: "openai-compatible" })).toThrow("are required");
+});

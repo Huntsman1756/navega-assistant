@@ -188,3 +188,15 @@ See `SECURITY.md`. Do not open a public issue for security issues.
 ## License
 
 Apache-2.0. See `LICENSE`.
+
+### Explicit local provider startup
+
+Both `pnpm --filter @guided-web/api dev` and `pnpm --filter @guided-web/api start`
+load the repository-root `.env` using Node's native `--env-file`. A missing file,
+missing provider selection, or incomplete real-provider configuration fails clearly.
+Process environment overrides env-file values: unset stale `AI_*` overrides before G1.
+Use Node 22 or newer. Tests/CI explicitly use mock and never load the operator key.
+For G1 set `AI_PROVIDER=openai-compatible`, `AI_BASE_URL=https://api.nan.builders/v1`,
+`AI_MODEL=qwen3.6`, and a backend-only `AI_API_KEY` in the ignored root `.env`.
+Check `http://127.0.0.1:8787/health` for provider/model identity before opening Chrome.
+The server binds explicitly to `127.0.0.1`; there is no P0 remote-listen mode.
