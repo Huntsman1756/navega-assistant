@@ -4,8 +4,9 @@
  *
  * The manifest does NOT auto-inject this script. Extraction only happens when
  * the user asks for help. It reads the DOM, builds a sanitized snapshot and
- * forwards it to the extension. No values, secrets or provider keys leave this
- * file.
+ * forwards it inside the extension with a separate local sensitive-value
+ * dictionary. The dictionary stays in browser memory; the Side Panel uses it
+ * to sanitize the complete outbound request. Provider keys never enter here.
  *
  * A per-capture token is read from the isolated world and echoed back so the
  * side-panel capture can correlate this snapshot to the current tab + capture

@@ -3,7 +3,7 @@ import { get } from "node:http";
 
 function status(path: string): Promise<number | undefined> {
   return new Promise((resolve, reject) => {
-    get({ hostname: "127.0.0.1", port: 4173, path }, (res) => {
+    get({ hostname: "127.0.0.1", port: 14173, path }, (res) => {
       res.resume();
       res.on("end", () => resolve(res.statusCode));
     }).on("error", reject);

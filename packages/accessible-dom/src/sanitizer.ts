@@ -1,11 +1,11 @@
 /**
  * Local sanitization rules.
  *
- * The extension MUST sanitize before any data leaves the browser. We never
- * serialize input values. This module classifies sensitive fields and decides
- * which elements may be excluded entirely.
+ * The extension MUST sanitize before data leaves the browser. This module
+ * classifies sensitive controls, collects their values locally, and removes
+ * exact matches across outbound strings. No value property enters a snapshot.
  *
- * This is a GUARANTEE for raw input values and a defence-in-depth (statistical,
+ * This is a GUARANTEE for classified captured values and a defence-in-depth (statistical,
  * conservatively-gated) layer for secret-looking visible text. See
  * `docs/SECURITY-INVARIANTS.md` P0-07 for the exact, auditable contract.
  */

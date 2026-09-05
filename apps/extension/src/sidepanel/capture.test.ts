@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { capturePageContext, type CaptureEnvironment, type CaptureEvent, type EnumeratedFrame } from "./capture";
 import type { AccessibleDOMSnapshot } from "@guided-web/protocol";
+import { sanitizeOutbound } from "./outbound";
 
 function snapshot(frameName: string): AccessibleDOMSnapshot {
   return {
@@ -189,4 +190,17 @@ it("limits frame work initiation, keeping the top first", async () => {
   const ctx = await run;
   expect(w.injected).toEqual([0,1,2,3,4,5,6,7]);
   expect(ctx.truncated).toBe(true);
+});
+
+it("carries child-frame classified values to the complete outbound boundary without serializing the dictionary", async () => {
+  const w = makeEnv();
+  const run = capturePageContext({ ...w.env, settleMs: 60 });
+  await settle(20);
+  w.send({ type: "GWA_SNAPSHOT", snapshot: snapshot("top"), senderTabId: 1, senderFrameId: 0, sensitiveValues: [] });
+  w.send({ type: "GWA_SNAPSHOT", snapshot: snapshot("child"), senderTabId: 1, senderFrameId: 1, sensitiveValues: ["SECRET_CHILD_X91"] });
+  const context = await run;
+  expect(JSON.stringify(context).includes("SECRET_CHILD_X91")).toBe(false);
+  const payload = sanitizeOutbound(context, "Help SECRET_CHILD_X91", { schemaVersion: 1, sessionId: "s", turns: [] });
+  expect(payload.question).toBe("Help ");
+  expect(JSON.stringify(payload).includes("SECRET_CHILD_X91")).toBe(false);
 });

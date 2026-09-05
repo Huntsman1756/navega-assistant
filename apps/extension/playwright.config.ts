@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const API_PORT = 18787;
-const FIXTURES_PORT = 4173;
+const FIXTURES_PORT = 14173;
 
 export default defineConfig({
   testDir: "./e2e",
