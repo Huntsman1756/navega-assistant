@@ -8,11 +8,21 @@ The next open gate is **G1**:
 G1 — P0 HUMAN PRODUCT VALIDATION
 ```
 
-> **G1 artifact:** the G1 artifact is `v0.0.7-p0-g1-baseline`. It adds a
-> small, **ephemeral current help session** (a bounded conversation so the
-> assistant can answer short follow-ups such as “ya estoy” / “¿y ahora?”) and a
-> **per-origin permission UX** for sites `activeTab` cannot reach. It does **not**
-> add highlighting, autonomous actions or browsing history.
+> **G1 artifact:** the G1 artifact is `v0.0.8-p0-g1-baseline` (commit
+> `05898434b480f11a0a8b59e115a150b1e54d10da`). It is a latency / fail-fast
+> closure on top of the runtime-correctness baseline `v0.0.7-p0-g1-baseline`.
+> Concretely: every provider call has a hard `AbortController` deadline
+> (`AI_PROVIDER_TIMEOUT_MS`, default 8000 ms), a distinct `provider_timeout`
+> (HTTP 504) that is never folded into `provider_unavailable`, a browser-side
+> fail-safe deadline (`BACKEND_REQUEST_TIMEOUT_MS = 12000`), local-only
+> `[perf]` console timings (`capture_ms`, `assist_request_ms`,
+> `backend_request_ms`, `provider_ms`, `total_ms`) and friendly Spanish
+> participant-visible errors (technical codes stay in the local console).
+> It still holds the small, **ephemeral current help session** (a bounded
+> conversation so the assistant can answer short follow-ups such as
+> “ya estoy” / “¿y ahora?”) and the **per-origin permission UX** for sites
+> `activeTab` cannot reach. It does **not** add highlighting, autonomous
+> actions or browsing history.
 
 Requirement: **real human evidence**, not a technical gate. It is deliberately
 not a single percentage. The gate passes when the qualitative review answers
