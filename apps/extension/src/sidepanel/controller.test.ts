@@ -481,3 +481,31 @@ describe("permission UX", () => {
     expect(c.currentSession().turns).toHaveLength(0);
   });
 });
+
+it("manual timeout retry preserves exact question, captures fresh context, and appends no duplicate", async () => {
+  let n = 0;
+  const w = makeFacade({ result: () => ++n === 1 ? errResult("provider_timeout") : okResult("Continue") });
+  const els = buildElements();
+  const c = createController(w.facade, els);
+  els.input.value = "Quiero cambiar mi direcci?n de entrega";
+  await c.askHelp();
+  expect(els.input.value).toBe("Quiero cambiar mi direcci?n de entrega");
+  expect(c.currentSession().turns).toHaveLength(0);
+  await c.askHelp();
+  expect(w.calls.capture).toBe(2);
+  expect(w.assistRequests.map(r => r.question)).toEqual(Array(2).fill("Quiero cambiar mi direcci?n de entrega"));
+  expect(c.currentSession().turns.map(t => t.role)).toEqual(["user", "assistant"]);
+});
+it("invalid recovered session and empty assistant cannot poison a future valid request", async () => {
+  let n = 0;
+  const w = makeFacade({ loadSession: { schemaVersion: 1, sessionId: "s", turns: [{ role: "assistant", text: "", timestamp: 1 }] }, result: () => okResult(++n === 1 ? "   " : "Continue") });
+  const els = buildElements();
+  const c = createController(w.facade, els);
+  els.input.value = "Help me continue";
+  await c.askHelp();
+  expect(c.currentSession().turns).toHaveLength(0);
+  expect(els.helpButton.disabled).toBe(false);
+  expect(els.status.textContent).not.toContain("invalid_model_output");
+  await c.askHelp();
+  expect(c.currentSession().turns).toHaveLength(2);
+});

@@ -5,7 +5,7 @@
  * a fresh, self-contained call to the backend.
  */
 import type { AssistResultMessage } from "../shared/messages";
-import type { HelpSession, PageContext } from "@guided-web/protocol";
+import { AssistRequestSchema, AssistResponseSchema, type HelpSession, type PageContext } from "@guided-web/protocol";
 
 /**
  * Fail-safe deadline for the extension → localhost backend request. It is
@@ -52,7 +52,7 @@ export async function requestAssist(
     const res = await fetchImpl(`${backendUrl}/v1/assist`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildAssistPayload(context, question, session)),
+      body: JSON.stringify(AssistRequestSchema.parse(buildAssistPayload(context, question, session))),
       signal: controller.signal,
     });
 
@@ -65,15 +65,17 @@ export async function requestAssist(
       outcome = "timeout";
       return { type: "GWA_ASSIST_RESULT", ok: false, error: "backend_timeout" };
     }
-    if (!res.ok || !data || !data.decision) {
+    if (!res.ok) {
       // A backend `provider_timeout` (504) keeps its distinct code; it must
       // never be flattened into the generic local `network` failure.
       outcome = "error";
-      return { type: "GWA_ASSIST_RESULT", ok: false, error: data?.error ?? "backend_error" };
+      return { type: "GWA_ASSIST_RESULT", ok: false, error: ["provider_timeout", "provider_unavailable", "invalid_model_output", "provider_busy"].includes(data?.error ?? "") ? data!.error! : "backend_error" };
     }
 
+    const parsed = AssistResponseSchema.safeParse(data);
+    if (!parsed.success || parsed.data.mode !== "DOM_ONLY") return { type: "GWA_ASSIST_RESULT", ok: false, error: "invalid_model_output" };
     outcome = "ok";
-    return { type: "GWA_ASSIST_RESULT", ok: true, decision: data.decision as never };
+    return { type: "GWA_ASSIST_RESULT", ok: true, decision: parsed.data.decision };
   } catch {
     // Aborted by OUR deadline → distinguishable backend_timeout. Any other
     // failure (connection refused, DNS, reset) is the classic `network`.

@@ -11,7 +11,7 @@
  * - user-typed secret-looking values are redacted before retention;
  * - resetting creates a fresh session.
  */
-import type { HelpSession, HelpTurn } from "@guided-web/protocol";
+import { HelpSessionSchema, type HelpSession, type HelpTurn } from "@guided-web/protocol";
 import { redactSecretValues } from "@guided-web/security-policy";
 
 /** Maximum number of recent turns retained in a session. */
@@ -61,15 +61,16 @@ export function appendTurn(
   role: HelpTurn["role"],
   rawText: string,
 ): HelpSession {
-  const text = role === "user" ? redactSecretValues(rawText) : rawText;
+  const text = redactSecretValues(rawText);
   const trimmed = text.trim().slice(0, MAX_TURN_TEXT);
+  if (!trimmed) throw new Error("empty session turn");
   const turn: HelpTurn = { role, text: trimmed, timestamp: Date.now() };
   const turns = trimTurns([...session.turns, turn], MAX_TURNS);
   let goal = session.goal;
   if (!goal && role === "user") {
     goal = trimmed.slice(0, MAX_GOAL_TEXT);
   }
-  return { ...session, goal, turns };
+  return HelpSessionSchema.parse({ ...session, goal, turns });
 }
 
 /**

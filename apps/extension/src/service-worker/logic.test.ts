@@ -40,7 +40,7 @@ describe("service worker assist logic (stateless, P0-14)", () => {
     const fetchImpl = async (url: string) => {
       calls += 1;
       return new Response(
-        JSON.stringify({ decision: { kind: "explain", message: `answer-${calls}` } }),
+        JSON.stringify({ protocolVersion: 3, mode: "DOM_ONLY", decision: { kind: "explain", message: `answer-${calls}` } }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
     };
@@ -57,7 +57,7 @@ describe("service worker assist logic (stateless, P0-14)", () => {
     const fetchImpl = () =>
       Promise.resolve(
         new Response(
-          JSON.stringify({ decision: { kind: "explain", message: "fresh-answer" } }),
+          JSON.stringify({ protocolVersion: 3, mode: "DOM_ONLY", decision: { kind: "explain", message: "fresh-answer" } }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
       );
@@ -93,7 +93,7 @@ describe("backend fail-safe deadline (browser-side)", () => {
     let seenSignal: AbortSignal | undefined | null = null;
     const fetchImpl = async (_url: string, init: RequestInit) => {
       seenSignal = init.signal;
-      return new Response(JSON.stringify({ decision: { kind: "explain", message: "ok" } }), {
+      return new Response(JSON.stringify({ protocolVersion: 3, mode: "DOM_ONLY", decision: { kind: "explain", message: "ok" } }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -166,7 +166,7 @@ describe("backend fail-safe deadline (browser-side)", () => {
     expect(res).toEqual({ type: "GWA_ASSIST_RESULT", ok: false, error: "backend_timeout" });
     // Even if the backend finally answers now, the request already settled.
     late.resolve?.(
-      new Response(JSON.stringify({ decision: { kind: "explain", message: "stale" } }), {
+      new Response(JSON.stringify({ protocolVersion: 3, mode: "DOM_ONLY", decision: { kind: "explain", message: "stale" } }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
@@ -182,7 +182,7 @@ describe("backend fail-safe deadline (browser-side)", () => {
     });
     try {
       const fetchImpl = async () =>
-        new Response(JSON.stringify({ decision: { kind: "explain", message: "ok" } }), {
+        new Response(JSON.stringify({ protocolVersion: 3, mode: "DOM_ONLY", decision: { kind: "explain", message: "ok" } }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
@@ -196,4 +196,10 @@ describe("backend fail-safe deadline (browser-side)", () => {
       expect(line).not.toContain("pregunta privada");
     }
   });
+});
+
+it("rejects malformed or wrong-version envelopes and empty/invalid decisions", async () => {
+  for (const data of [{}, null, { protocolVersion: 2, mode: "DOM_ONLY", decision: { kind: "explain", message: "ok" } }, ...["", "   "].map(message => ({ protocolVersion: 3, mode: "DOM_ONLY", decision: { kind: "explain", message } })), { protocolVersion: 3, mode: "DOM_ONLY", decision: { kind: "click", message: "ok" } }]) {
+    expect(await requestAssist("http://localhost:8787", context("a"), "q", emptySession(), okFetch(data))).toMatchObject({ ok: false, error: "invalid_model_output" });
+  }
 });

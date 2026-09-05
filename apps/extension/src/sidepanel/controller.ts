@@ -6,7 +6,7 @@
  * unit-tested with a fake. It manages a small bounded conversation, drives
  * per-origin permission UX, and never performs any autonomous browser action.
  */
-import type { AccessibleDOMSnapshot, HelpSession, HelpTurn, PageContext } from "@guided-web/protocol";
+import { HelpSessionSchema, P0AssistantDecisionSchema, type AccessibleDOMSnapshot, type HelpSession, type HelpTurn, type PageContext } from "@guided-web/protocol";
 import type { AssistResultMessage } from "../shared/messages";
 import { sanitizeOutbound, sanitizeCapturedData } from "./outbound";
 import { capturePageContext } from "./capture";
@@ -127,7 +127,8 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
 
   async function ensureSession(): Promise<HelpSession> {
     if (session) return session;
-    session = (await facade.loadSession()) ?? resetSession();
+    const loaded = HelpSessionSchema.safeParse(await facade.loadSession().catch(() => null));
+    session = loaded.success ? loaded.data : resetSession();
     return session;
   }
 
@@ -253,6 +254,7 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
     } finally {
       logPerf("total_ms", tTotal);
       inFlight = false;
+      if (pendingUserText) els.input.value = pendingUserText;
       els.helpButton.disabled = false;
       els.newHelpButton.disabled = false;
     }
@@ -267,9 +269,11 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
       setStatus(friendlyError(result.error));
       return;
     }
+    const decision = P0AssistantDecisionSchema.safeParse(result.decision);
+    if (!decision.success) { setStatus(friendlyError("invalid_model_output")); return; }
     if (session) {
-      session = appendTurn(session, "user", userText);
-      session = appendTurn(session, "assistant", result.decision.message);
+      const withUser = appendTurn(session, "user", userText);
+      session = appendTurn(withUser, "assistant", decision.data.message);
       pendingUserText = null;
       void facade.saveSession(session);
     }
@@ -352,6 +356,7 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
   }
 
   async function reset(): Promise<void> {
+    if (inFlight) return;
     hidePermission();
     pendingUserText = null;
     clearPending();
@@ -478,8 +483,8 @@ export function createChromeFacade(cc: typeof chrome): ChromeFacade {
       cc.permissions.request({ origins: [pattern] }) as unknown as Promise<boolean>,
     loadSession: async () => {
       const stored = await cc.storage.session.get("helpSession");
-      const value = stored.helpSession as HelpSession | undefined;
-      return value ?? null;
+      const value = HelpSessionSchema.safeParse(stored.helpSession);
+      return value.success ? value.data : null;
     },
     saveSession: async (s: HelpSession) => {
       await cc.storage.session.set({ helpSession: s });
