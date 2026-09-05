@@ -12,13 +12,18 @@ function run(args, input) {
   return execFileSync("git", args, { input, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 }
 
+if (run(["rev-parse", "--is-shallow-repository"]).trim() !== "false") {
+  console.error("FAIL full-history scan requires a non-shallow repository; fetch complete history first");
+  process.exit(1);
+}
+
 const objects = run(["rev-list", "--objects", "--all"]).trim().split("\n").filter(Boolean);
 const shaToPath = new Map();
 const uniqueShas = [];
 for (const line of objects) {
   const idx = line.indexOf(" ");
-  const sha = line.slice(0, idx);
-  const path = line.slice(idx + 1);
+  const sha = idx < 0 ? line : line.slice(0, idx);
+  const path = idx < 0 ? "" : line.slice(idx + 1);
   if (!uniqueShas.includes(sha)) uniqueShas.push(sha);
   if (path && !shaToPath.has(sha)) shaToPath.set(sha, path);
 }
@@ -48,6 +53,11 @@ const fail = (m) => {
   console.error(`FAIL  ${m}`);
 };
 
+// Paths must be checked separately: identical blobs can have multiple historical names.
+for (const path of new Set(run(["log", "--all", "--format=", "--name-only", "--no-renames"]).split("\n").filter(Boolean))) {
+  if (/(^|\/)\.env(?:\..+)?$/.test(path) && !/(^|\/)\.env\.example$/.test(path)) fail(`committed environment file found in history: ${path}`);
+}
+
 console.log(`Git history secret scan (${blobShas.length} blobs across all history)`);
 
 for (const sha of blobShas) {
@@ -56,19 +66,20 @@ for (const sha of blobShas) {
   try {
     content = run(["cat-file", "-p", sha]);
   } catch {
-    continue; // binary or unreadable
+    fail(`unreadable history blob ${sha}`);
+    continue;
   }
 
   if (/^\.env(\..+)?$/.test(path) && path !== ".env.example") {
     fail(`committed environment file found in history: ${path}`);
     continue;
   }
-  if (path === ".env.example") {
-    continue; // committed template with blank values, intentionally present
-  }
 
   for (const pattern of SECRET_PATTERNS) {
-    if (pattern.test(content)) {
+    const matches = [...content.matchAll(new RegExp(pattern.source, pattern.flags + "g"))];
+    // Exact documented dummy values only; templates themselves are never excluded.
+    const safeDummies = new Set(["AI_API_KEY=sk-your-nan-builders-key", "AI_API_KEY=synthetic-only"]);
+    if (matches.some(match => !safeDummies.has(match[0].replace(/\s*=\s*/, "=")))) {
       fail(`possible secret in history -> ${path} (matches ${pattern})`);
       break;
     }
@@ -79,6 +90,6 @@ if (failures > 0) {
   console.error(`\n${failures} git-history secret check(s) FAILED`);
   process.exit(1);
 } else {
-  ok("no secrets and no committed .env files found in git history");
+  ok("no configured secret patterns or forbidden .env paths detected in available full history");
   console.log("\nAll git-history secret checks passed.");
 }

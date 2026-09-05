@@ -12,13 +12,13 @@
     "build": "pnpm -r build",
     "lint": "eslint \"apps/*/src/**/*.ts\" \"packages/*/src/**/*.ts\" \"scripts/**/*.mjs\" \"eslint.config.mjs\"",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test",
+    "test": "pnpm -r test && node --test scripts/git-secret-scan.test.mjs",
     "test:unit": "pnpm -r test:unit",
     "test:integration": "pnpm -r test:integration",
     "test:e2e": "pnpm --filter @guided-web/extension test:e2e",
     "security:check": "node scripts/security-checks.mjs",
     "security:git-history": "node scripts/git-secret-scan.mjs",
-    "verify": "pnpm lint && pnpm -r typecheck && pnpm -r test && pnpm build && pnpm security:check && pnpm security:git-history",
+    "verify": "pnpm lint && pnpm -r typecheck && pnpm test && pnpm build && pnpm security:check && pnpm security:git-history",
     "clean": "pnpm -r clean"
   },
   "devDependencies": {
