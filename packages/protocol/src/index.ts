@@ -40,10 +40,10 @@ export type ElementState = z.infer<typeof ElementStateSchema>;
  */
 export const AccessibleElementSchema = z
   .object({
-    id: z.string(),
-    tag: z.string(),
-    role: z.string().optional(),
-    accessibleName: z.string().optional(),
+    id: z.string().max(64),
+    tag: z.string().max(64),
+    role: z.string().max(64).optional(),
+    accessibleName: z.string().max(160).optional(),
     interactive: z.boolean(),
     state: ElementStateSchema.optional(),
   })
@@ -60,16 +60,17 @@ export type AccessibleElement = z.infer<typeof AccessibleElementSchema>;
 export const AccessibleDOMSnapshotSchema = z
   .object({
     schemaVersion: z.literal(1),
-    snapshotId: z.string(),
+    snapshotId: z.string().max(64),
     page: z
       .object({
-        url: z.string(),
-        origin: z.string(),
-        title: z.string(),
+        url: z.string().max(1000),
+        origin: z.string().max(1000),
+        title: z.string().max(300),
       })
       .strict(),
-    elements: z.array(AccessibleElementSchema),
-    visibleText: z.array(z.string()).optional(),
+    elements: z.array(AccessibleElementSchema).max(200),
+    visibleText: z.array(z.string().max(300)).max(40).optional(),
+    truncated: z.boolean().optional(),
   })
   .strict();
 export type AccessibleDOMSnapshot = z.infer<typeof AccessibleDOMSnapshotSchema>;
@@ -92,10 +93,10 @@ export const FrameSnapshotSchema = z
     // The main/top frame reports parentFrameId = -1 (Chrome convention); child
     // frames report their parent's frameId.
     parentFrameId: z.number().int().optional(),
-    origin: z.string().optional(),
+    origin: z.string().max(1000).optional(),
     accessible: z.boolean(),
     snapshot: AccessibleDOMSnapshotSchema.optional(),
-    unavailableReason: z.string().optional(),
+    unavailableReason: z.string().max(100).optional(),
   })
   .strict()
   .superRefine((val, ctx) => {
@@ -123,7 +124,8 @@ export const PageContextSchema = z
   .object({
     schemaVersion: z.literal(1),
     topFrameId: z.number().int().nonnegative(),
-    frames: z.array(FrameSnapshotSchema),
+    frames: z.array(FrameSnapshotSchema).max(8),
+    truncated: z.boolean().optional(),
   })
   .strict();
 export type PageContext = z.infer<typeof PageContextSchema>;
@@ -139,20 +141,20 @@ export const P0AssistantDecisionSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("explain"),
-      message: z.string(),
+      message: z.string().trim().min(1).max(4000),
     })
     .strict(),
   z
     .object({
       kind: z.literal("ask_user"),
-      message: z.string(),
+      message: z.string().trim().min(1).max(4000),
     })
     .strict(),
   z
     .object({
       kind: z.literal("cannot_help"),
-      reason: z.string(),
-      message: z.string(),
+      reason: z.string().trim().min(1).max(200),
+      message: z.string().trim().min(1).max(4000),
     })
     .strict(),
 ]);
@@ -169,14 +171,14 @@ export const HelpTurnSchema = z.discriminatedUnion("role", [
   z
     .object({
       role: z.literal("user"),
-      text: z.string().min(1).max(4000),
+      text: z.string().trim().min(1).max(4000),
       timestamp: z.number(),
     })
     .strict(),
   z
     .object({
       role: z.literal("assistant"),
-      text: z.string().min(1).max(4000),
+      text: z.string().trim().min(1).max(4000),
       timestamp: z.number(),
     })
     .strict(),
@@ -198,7 +200,7 @@ export const HelpSessionSchema = z
     sessionId: z.string().min(1).max(64),
     goal: z.string().max(4000).optional(),
     currentOrigin: z.string().max(2000).optional(),
-    turns: z.array(HelpTurnSchema),
+    turns: z.array(HelpTurnSchema).max(10),
   })
   .strict();
 export type HelpSession = z.infer<typeof HelpSessionSchema>;
@@ -227,8 +229,8 @@ export const AssistResponseSchema = z
     protocolVersion: z.literal(3),
     decision: P0AssistantDecisionSchema,
     mode: ContextModeSchema,
-    provider: z.string().optional(),
-    model: z.string().optional(),
+    provider: z.string().max(100).optional(),
+    model: z.string().max(100).optional(),
   })
   .strict();
 export type AssistResponse = z.infer<typeof AssistResponseSchema>;

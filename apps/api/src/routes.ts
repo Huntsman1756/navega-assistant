@@ -1,4 +1,8 @@
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
+
+export const MAX_BODY_BYTES = 256 * 1024;
+export const MAX_PROVIDER_CALLS = 2;
 import type { AIProvider } from "@guided-web/provider";
 import {
   AssistRequestSchema,
@@ -70,7 +74,9 @@ export function createApp(
   const app = new Hono();
   const providerTimeoutMs = opts?.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
 
-  app.get("/health", (c) => c.json({ ok: true, provider: providerName }));
+  let activeCalls = 0;
+  app.get("/health", (c) => c.json({ ok: true, provider: providerName, model }));
+  app.use("/v1/assist", bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json({ error: "body_too_large" }, 413) }));
 
   app.post("/v1/assist", async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -84,14 +90,16 @@ export function createApp(
     }
     const req = parsed.data;
 
+    if (activeCalls >= MAX_PROVIDER_CALLS) return c.json({ error: "provider_busy" }, 429);
     let response;
     // Local-only perf instrumentation. Duration + outcome ONLY: never the
     // question, the page content, the session, URLs or any provider detail.
     const tProvider = performance.now();
     const controller = new AbortController();
     try {
-      response = await withProviderTimeout(
-        provider.assist(
+      activeCalls += 1;
+      // Hold the slot until underlying work settles, even if it ignores abort.
+      const work = Promise.resolve().then(() => provider.assist(
           {
             mode: req.mode,
             question: req.question,
@@ -100,7 +108,9 @@ export function createApp(
             systemPrompt: buildSystemPrompt(),
           },
           controller.signal,
-        ),
+        )).finally(() => { activeCalls -= 1; });
+      response = await withProviderTimeout(
+        work,
         providerTimeoutMs,
         controller,
       );

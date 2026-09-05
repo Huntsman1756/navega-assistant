@@ -7,8 +7,8 @@ const app = createApp(config.provider, config.providerName, config.model, {
   providerTimeoutMs: config.providerTimeoutMs,
 });
 
-serve({ fetch: app.fetch, port: config.port }, (info) => {
+serve({ fetch: app.fetch, port: config.port, hostname: "127.0.0.1" }, (info) => {
   console.log(
-    `Guided Web Assistant API listening on http://localhost:${info.port} (provider: ${config.providerName})`,
+    `Guided Web Assistant API listening on http://127.0.0.1:${info.port} (provider: ${config.providerName})`,
   );
 });
