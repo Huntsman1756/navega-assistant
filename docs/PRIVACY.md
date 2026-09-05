@@ -25,7 +25,7 @@ and a **short, bounded recent help conversation** are sent to the
 self-hostable backend. Specifically, the snapshot:
 
 - contains roles, accessible names, interactive flags and element states;
-- **never** contains input values (password, OTP, card numbers, tokens);
+- removes classified raw sensitive control values across the complete outbound request;
 - excludes hidden inputs and script/style content;
 - redacts **high-confidence** secret-looking visible text (a strong
   secret-context phrase immediately preceding a digit run, e.g.
@@ -58,8 +58,9 @@ is **not** a browsing history.
   request and never stored as history).
 - Full email/page contents as historical state.
 - A permanent behavioural profile or cross-session memory.
-- Secret values. If a user accidentally types a password/OTP/card value into the
-  question box, it is redacted before it is stored in the conversation.
+- Classified sensitive values from the capture are removed from both user and
+  assistant text before checkpointing. Arbitrary secrets pasted only into prose
+  have heuristic protection, not guaranteed detection.
 
 **Where and how long**
 
@@ -77,9 +78,10 @@ is **not** a browsing history.
 - We never serialize input values by default. For a textbox the state is
   represented as `{ "role": "textbox", "state": { "empty": false } }`, never
   `{ "value": "user secret here" }`.
-- We detect and exclude password fields, OTP fields, card-number/CVV fields,
-  authorization tokens and session identifiers.
-- **Guaranteed:** raw values of secret-bearing form fields are never serialized.
+- Classified controls retain useful role, label and state; their raw sensitive
+  values are collected locally and removed across outbound strings.
+- **Guaranteed:** classified raw sensitive values in captured form controls are
+  removed before outbound serialization, or the request fails closed.
 - **Defence in depth:** secret-looking visible text is redacted only when
   contextual classification is strong (a secret-context phrase precedes the
   value). This is statistical, not a promise about arbitrary prose.
@@ -98,9 +100,9 @@ inserted before each request.
 
 This trust assumption is **specific to this deployment**. Do not assume that all
 possible deployment providers have identical privacy properties. Independent of
-the provider, the structural secret-safety invariants are preserved: passwords,
-OTP/MFA codes, card numbers, CVV, auth tokens, API keys, hidden secret fields
-and raw sensitive input values are never serialized or retained.
+the provider, the structural secret-safety invariants are preserved: classified raw sensitive form-control values in captured documents are removed
+before outbound serialization and checkpointing. Arbitrary-secret detection in
+ordinary prose is not promised.
 
 ## Telemetry
 
@@ -127,3 +129,6 @@ git-ignored and never committed. Participants are referred to by aliases
 For G1 (P01–P04), only fixtures, dedicated test accounts and dummy form data
 must be used. Participants must never use real passwords, OTP/verification
 codes, payment cards, recovery codes or banking data.
+
+See [PRE-P01 closure contracts and operator smoke](PRE-P01-SECURITY-CLOSURE.md)
+for exact dictionary lifetime, URL privacy, limits and retry semantics.

@@ -41,21 +41,19 @@ phase in which it is fully implemented.
 - **P0-05 / P0-06:** Page content is inserted only as serialized data into a
   system prompt that labels it untrusted. The codebase never parses page text
   as instructions.
-- **P0-07:** The extractor never serializes input values. Secret fields
-  (password/OTP/card) are represented by role + label + state only. Hidden
-  inputs are excluded entirely. A secret that appears as ordinary **visible
-  text** (e.g. “Tu código de verificación es 938271”) is redacted when it is
-  preceded by a strong secret-context phrase. A date, price, postal/cardholder
-  number or order number is deliberately **not** redacted merely because it
-  contains digits.
-  - **GUARANTEED:** raw password input values are never serialized;
-  - **GUARANTEED:** raw OTP/payment-card/CVV input values are never serialized;
-  - **GUARANTEED:** hidden secret inputs are excluded;
-  - **GUARANTEED:** provider API keys exist only in backend configuration;
-  - **HIGH-CONFIDENCE / DEFENCE-IN-DEPTH:** sensitive visible textual runs are
-    redacted only when contextual classification is strong (a secret-context
-    phrase immediately precedes a digit run). This is statistical, never a
-    promise about arbitrary prose.
+- **P0-07:** Classified sensitive control values are collected locally from
+  captured documents, including hidden inputs and open shadow roots. Every
+  outbound string is sanitized before AssistRequest validation: question,
+  accessible names, prose, metadata, goal, previous user and assistant turns.
+  The dictionary stays in extension messaging/memory, never HTTP, checkpoints
+  or logs. Privacy collection/work-budget failures block capture.
+  - **GUARANTEE:** classified raw sensitive form-control values are removed
+    before outbound serialization; structural collisions fail closed.
+  - **DEFENSE IN DEPTH:** ordinary secret-looking prose is heuristically redacted.
+    Arbitrary prose, inaccessible frames and closed shadows are not exhaustively
+    classifiable. See the exact scope in the PRE-P01 closure contract.
+  - Provider-visible URLs omit query, fragment and credentials; permission checks
+    keep using the authoritative browser origin.
 - **P0-11:** There is no `click`, `type`, `submit`, `purchase`, `delete`,
   `send`, `executeJavaScript`, or arbitrary-remote-control primitive anywhere
   in the runtime code. Playwright exists only as a test tool.
@@ -88,12 +86,16 @@ phase in which it is fully implemented.
 - Instruction safety is keyword-pattern based. It is defence in depth, not a
   complete solution to semantic prompt injection.
 - Visible-text secret redaction is contextual/keyword-based (defence in depth),
-  not an exhaustive DLP. The hard guarantee is that raw secret form-field values
-  are never serialized.
-- No server-side quotas or advanced rate limiting yet (P0-13 is P2).
+  not an exhaustive DLP. The hard guarantee covers classified raw sensitive control values
+  in captured documents at the outbound boundary.
+- P0 has a 512 KiB pre-parse body limit, collection limits and two underlying
+  provider calls maximum. Distributed/per-user quotas remain P2.
 - No screenshot redaction / vision policy yet (P0-18 is P2).
 - No target identity/resolution or stale-response guarding yet (P0-03/04/09/10
   are P1/P2).
 - The current help session is ephemeral and bounded; it is not a durable,
   cross-session persistent store. Durable sessions remain future (P1/P2) and
   would require re-verifying P0-14/P0-22.
+
+See [PRE-P01 closure contracts and operator smoke](PRE-P01-SECURITY-CLOSURE.md)
+for exact limits, verification evidence and release gates.
