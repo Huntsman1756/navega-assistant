@@ -10,6 +10,27 @@ Unless recorded in `THIRD_PARTY_NOTICES.md`, code in this repository is
 original to this project. Anything adapted from upstream MUST be recorded here
 with the exact repository, license, compatibility note and attribution.
 
+## Global Buy / Reuse / Build Policy
+
+Navega MUST NOT reinvent commodity infrastructure.
+
+Before implementing ANY new technical component:
+
+1. Search for an official platform solution.
+2. Search for a maintained, licensed OSS implementation.
+3. Inspect exact source code, not only README claims.
+4. Record exact repository + commit/tag + license.
+5. Classify:
+
+   REUSE | ADAPT | PATTERN_ONLY | REJECT | BUILD
+
+6. Only BUILD from scratch when the previous options do not safely fit.
+
+This applies to ALL Navega engineering, not only voice.
+
+If a worker is about to create >150 lines of commodity infrastructure,
+STOP and justify why platform/upstream reuse is insufficient.
+
 ## Adopted / direct dependency
 
 ### dom-accessibility-api
@@ -24,12 +45,18 @@ with the exact repository, license, compatibility note and attribution.
   autonomous-agent infrastructure (it has none). Only the standard, published
   API functions are imported.
 - **Compatibility / security note:** `getRole` returns `null` for
-  `<input type="password">`; we add a minimal role fallback (`textbox`) for that
-  narrow compatibility gap. The accessible-name calculation never reads an
-  input's live value, so it cannot leak a password/OTP/card value; the sanitizer
-  in `packages/accessible-dom/src/sanitizer.ts` remains the authoritative
-  data-leak boundary and is applied across the top document, frames and shadow
-  roots.
+  `<input type="password">`; Navega adds a minimal `textbox` fallback for that
+  narrow compatibility gap.
+
+- `computeAccessibleName()` is NOT treated as a privacy boundary. Accessible
+  names may incorporate text or values from referenced controls through ARIA
+  relationships. Therefore every extracted string remains subject to Navega's
+  local sensitive-value classification and complete outbound sanitization
+  boundary before serialization.
+
+- The sanitizer in `packages/accessible-dom/src/sanitizer.ts` is authoritative
+  for classified raw sensitive form-control values across the top document,
+  frames and open shadow roots.
 
 ## Studied for concepts only (not imported)
 
@@ -71,6 +98,276 @@ with the exact repository, license, compatibility note and attribution.
 - **Not reused / not ported:** Python/CDP/Playwright/Puppeteer automation
   runtime, `backendDOMNodeId`, autonomous action execution, browser control.
 
+==================================================
+VOICE-01 / VOICE-02 — VOICE UPSTREAM AUDIT
+==================================================
+
+Decision matrix:
+
+  Hermes Browser Extension        → ADAPT (primary STT permission/fallback arch)
+  A-Eye Web Chat Assistant        → PATTERN_ONLY (UX/accessibility/shortcuts)
+  whisper-web-extension           → PATTERN_ONLY (mic lifecycle/state machine)
+  Page Assist                     → PATTERN_ONLY (composer/TTS concepts only)
+
+Do NOT port Page Assist's React/Plasmo architecture.
+
+### Hermes Browser Extension (VOICE-02 STT upstream)
+
+- **Repository:** <https://github.com/abundantbeing/hermes-browser-extension>
+- **License:** MIT (Copyright 2026 Jon Komet)
+- **Inspected revision:** commit
+  `64f2abe443dddee78313e3b18169474cbd0f4f95` (2026-09-06).
+- **Decision:** ADAPT
+- **Class:** ADAPT
+
+**Relevant source files inspected:**
+
+| Upstream file | Content |
+|---------------|---------|
+| `extension/voice-dictation.html` | Visible fallback page (mic permission recovery) |
+| `extension/voice-dictation.js` | Dictation lifecycle, publishTranscript(), browser speech fallback |
+| `extension/sidepanel.html` (line 455) | Mic button in composer toolbar |
+| `extension/sidepanel.js` (lines 3718-4307) | Full voice control: capability check, MIME selection, permission recovery, MediaRecorder lifecycle, transcript return, stale protection, recording states, accessibility |
+| `extension/request-permissions.html` | Permission recovery UI page |
+| `extension/request-permissions.js` | Permission request via visible page |
+| `extension/lib/common.mjs` (lines 2104-2171) | `prepareOnDeviceSpeechRecognition()`, `isMicrophonePermissionError()` |
+| `extension/lib/browser-runtime.mjs` (lines 90-117) | Browser product detection, mic settings URLs |
+
+**What is ADAPTED:**
+
+- Microphone permission recovery architecture (Side Panel → visible fallback page → explicit user action → getUserMedia → MediaRecorder → transcript return)
+- MIME preference list (`audio/webm;codecs=opus` > `audio/webm` > `audio/mp4` > `audio/ogg` > `audio/wav`)
+- `MediaRecorder` lifecycle pattern (start → dataavailable chunks → stop → Blob → transcribe)
+- Stream track cleanup pattern: `stream?.getTracks?.().forEach(track => track.stop())`
+- Dual-channel transcript return: `chrome.runtime.sendMessage` (immediate) +
+  `chrome.storage.session` fallback (short TTL, consume-once, immediate delete)
+  — **Navega adaptation prefers session storage over localStorage for ephemeral privacy.**
+- Stale result protection: `ts: Date.now()` + TTL check
+- Recording transition guards: `voiceTransitionInFlight` guard against double-click
+- Accessibility patterns: `aria-live="polite"` + `role="status"` + `aria-busy`
+- `canRecordVoiceAudio()` capability check pattern:
+  `navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined'`
+- `getUserMedia` call with echo cancellation and noise suppression:
+  `{ audio: { echoCancellation: true, noiseSuppression: true } }`
+- Browser Speech fallback detection: `window.SpeechRecognition || webkitSpeechRecognition`
+- `isMicrophonePermissionError()` comprehensive error matching pattern
+
+**What is NOT reused:**
+
+- Hermes agent runtime
+- Autonomous browser actions (click/type/navigate)
+- Hermes planning/tool execution
+- Hermes-specific gateway abstractions
+- Persistent voice history
+- `chrome.storage.local` — Navega uses `chrome.storage.session` + `chrome.runtime.sendMessage` with short TTL (ephemeral privacy model)
+- `VOICE_DRAFT_STORAGE_KEY` / `hermesVoiceDraft` — Navega uses its own ephemeral keys
+
+**Integration cost:** Medium. The permission recovery architecture is a coherent
+system; the visible dictation page is a new extension page but the HTML/JS patterns
+transfer with ~30% code adaptation (i18n keys, branding, NaN Whisper endpoint,
+Navega composer target).
+
+**Security / permission impact:** High. Adds microphone permission flow. The visible
+fallback page requires an extension page with `getUserMedia` capability. No data
+persists beyond the transcription session.
+
+--------------------------------------------------
+
+### A-Eye Web Chat Assistant
+
+- **Repository:** <https://github.com/vincentwun/A-Eye-Web-Chat-Assistant>
+- **License:** MIT (Copyright 2024 Vincent Wun)
+- **Inspected revision:** default branch commit
+  `e9284c5d9e0d26a8938e57b007f0322d7d9cc471` (2025-12-03).
+- **Decision:** PATTERN_ONLY
+- **Class:** PATTERN_ONLY
+
+**Relevant source files inspected:**
+
+| Upstream file | Content |
+|---------------|---------|
+| `src/main/sidepanel.html` | Side panel structure, voice button, conversation region |
+| `src/voice/voiceControl.js` | Mic permission, toggle voice input, error reporting |
+| `src/voice/sttController.js` | Web Speech API STT (continuous, interim, silence timeout) |
+| `src/voice/ttsController.js` | Web Speech API TTS (voice selection with fallback) |
+| `src/voice/soundEffects.js` | Web Audio API oscillator sound effects |
+| `src/components/uiManager.js` | Voice button state toggle (icon class), thinking indicator |
+| `src/permission/permissionContent.js` | Permission iframe injection |
+| `src/permission/permission.html` | Permission request page |
+| `src/permission/requestPermission.js` | getUserMedia-based permission request |
+| `src/manifest.json` | Keyboard shortcut registration |
+| `src/background/background.js` | Shortcut command routing |
+| `src/components/stateManager.js` | Settings storage with `chrome.storage.onChanged` |
+
+**What is ADAPTED (pattern only, no code copied):**
+
+- Accessible voice button UX: mic icon ↔ stop icon toggle with CSS class
+- `aria-live` region patterns on voice status elements
+- Voice state change messaging (listening / recording / stopped)
+- Keyboard shortcut concept: manifest `commands` → background `onCommand` listener → sidepanel `onMessage` dispatch
+- Sound effect concept via Web Audio API (optional; may be omitted in VOICE-01)
+- Permission iframe pattern (3-file: content script → permission page → requestPermission)
+
+**What is NOT reused:**
+
+- Autonomous click actions (`src/action/pageAction.js` `clickElement()`)
+- Autonomous type actions (`typeInElement()`)
+- Autonomous key press (`simulateKeyPress()`)
+- Autonomous navigation (`executeJSON()`)
+- JSON action execution pipeline (`src/components/commandMap.js` → `actionFlowController.js`)
+- Element discovery for autonomous action (`src/action/getElement.js`)
+- Broad agent architecture (perceive → plan → act loop)
+- Any agent capability
+
+**Integration cost:** Low. Only UX/accessibility patterns are adapted; no code port.
+
+--------------------------------------------------
+
+### whisper-web-extension
+
+- **Repository:** <https://github.com/takahirox/whisper-web-extension>
+- **License:** MIT (Copyright 2024 Takahiro)
+- **Inspected revision:** default branch commit
+  `d98d7c078f4e1e6a6c7752ce2f63117b4cd26da8`.
+- **Decision:** PATTERN_ONLY
+- **Class:** PATTERN_ONLY
+
+**Relevant source files inspected:**
+
+| Upstream file | Content |
+|---------------|---------|
+| `src/extensions/content-script.ts` | 5-state icon state machine, getUserMedia, MediaRecorder lifecycle, audio capture, blob transport |
+| `src/extensions/background.ts` | Port-based communication, request queue (ONNX/Whisper inference) |
+| `src/extensions/common.ts` | Message type definitions (Request/Response/Error enum) |
+| `extensions/manifest.json` | Content script registration, host permissions |
+
+**What is ADAPTED (pattern only, no code copied):**
+
+- 5-state icon state machine: `Ready` → `WaitingForUserMedia` → `Recording` →
+  `RecordingStopRequested` → `RecordingStopped` → `Ready`
+- `isIconEnabled()` guard: only `Ready` and `Recording` states allow clicks
+- Explicit record/stop user gesture (toggle)
+- MediaRecorder lifecycle: MIME detection → `start()` → collect `dataavailable` chunks → `stop()` → `Blob` assembly
+- MIME type detection loop via `MediaRecorder.isTypeSupported()`
+- Microphone error handling: try/catch getUserMedia → state reset on denial
+- Blob lifecycle: `URL.createObjectURL` → transport → `URL.revokeObjectURL`
+- Port-based request/response pattern: `chrome.runtime.connect()` + request queue with callbacks
+- Message type enum pattern: `Request` / `Response` / `Error`
+
+**What is NOT reused:**
+
+- Local ONNX/Whisper inference stack (`pipeline()`, `InferenceSession`, `Tensor`, `env.wasm`)
+- AudioContext decode to Float32Array PCM as final payload
+- `fix-webm-duration` dependency
+- Floating mic icon DOM injection (Navega uses Side Panel UI)
+
+**Integration cost:** Low. State machine and lifecycle patterns transfer with minimal
+adaptation. NaN Whisper replaces local inference entirely.
+
+--------------------------------------------------
+
+### Page Assist (VOICE RE-EVALUATION)
+
+- **Repository:** <https://github.com/n4ze3m/page-assist>
+- **License:** MIT (Copyright 2023 Muhammed Nazeem)
+- **Inspected revision:** default branch commit
+  `7a5bc71ce7a9fcb736dcce471cef5aea10d7faad`.
+- **Decision:** PATTERN_ONLY (VOICE_REUSE = NO)
+- **Class:** REJECT (code) / PATTERN_ONLY (concepts)
+
+**Has a mature production-grade voice implementation:**
+
+- `src/hooks/useSpeechRecognition.tsx` — Web Speech API hook (autoStop, autoSubmit, interim)
+- `src/hooks/useTTS.tsx` — Multi-provider TTS (browser / ElevenLabs / OpenAI / Mistral)
+- `src/services/tts.ts` — TTS config service
+- `src/utils/tts.ts` — Audio splitting (punctuation/paragraph/none)
+- `src/utils/markdown-to-ssml.ts` — Markdown-to-SSML conversion
+- `src/components/Common/Playground/Message.tsx` — Per-message TTS play/stop button
+
+**Decision rationale — REJECT code, PATTERN_ONLY concepts:**
+
+Navega uses vanilla TypeScript with esbuild IIFE output. Page Assist uses
+React + WXT (Plasmo) framework. Porting Page Assist's voice code would require
+porting its entire React/Plasmo dependency stack, which is disproportionate to
+the value gained.
+
+**Concepts adapted (pattern only):**
+
+- Per-message TTS control (play/stop button pattern)
+- Composer state management for voice transcripts
+- Audio chunking/splitting concept (if required in future TTS iterations)
+- Playback cancellation pattern
+
+**Do NOT implement:**
+
+- Progressive/chunked TTS in VOICE-01 — use single-shot Kokoro playback
+- React hooks or Plasmo/WXT framework
+- Multi-provider TTS — use NaN Kokoro only
+- Web Speech API as primary STT — use NaN Whisper
+
+**Integration cost:** Low conceptually, high practically (would require full React
+stack port). Rejected.
+
+==================================================
+UPSTREAM PROVENANCE PROCEDURE
+==================================================
+
+For every actual adapted/copied source fragment record:
+
+  PROJECT
+  REPOSITORY
+  EXACT COMMIT/TAG
+  LICENSE
+  UPSTREAM FILE
+  LOCAL FILE
+  ADAPTATION
+  WHY USED
+
+Update:
+
+  docs/UPSTREAM-REUSE.md
+
+If required by actual source reuse:
+
+  THIRD_PARTY_NOTICES.md
+
+Never write vague provenance such as:
+
+  "default branch"
+  "current version"
+  "v0.3.2 era"
+
+Pin the actual inspected revision.
+
+==================================================
+BOUNDARY: WHAT IS NAVEGA-SPECIFIC
+==================================================
+
+The following remain Navega-specific and SHOULD be ours:
+
+- Human-control semantics (transcript confirmation before submit)
+- No autonomous page action
+- Privacy policy and session semantics
+- qwen3.6 guidance policy
+- User-facing simplicity
+- Study methodology
+- The visible dictation fallback page (adapted from Hermes, branded Navega)
+- The transcript → textarea → user review → "Ayúdame" flow
+- Ephemeral transcript transport (chrome.storage.session + runtime message)
+
+The following are commodity and SHOULD preferably be reused/adapted:
+
+- Microphone permission patterns (Hermes)
+- MediaRecorder lifecycle (Hermes / whisper-web-extension)
+- MIME negotiation (Hermes / whisper-web-extension)
+- Stream track cleanup (Hermes / whisper-web-extension)
+- Extension-page fallback architecture (Hermes)
+- Audio playback lifecycle (page-assist concept, native implementation)
+- Browser compatibility patterns (all upstreams)
+- Icon state machine (whisper-web-extension)
+- Keyboard shortcut pattern (A-Eye)
+- Accessibility patterns (Hermes + A-Eye)
+
 ## Official Chrome references audited (pre-G1 runtime closure)
 
 These official references materially shaped the pre-G1 runtime-correctness
@@ -105,16 +402,3 @@ behaviour and are the source of the engineering decisions below.
   `addHostAccessRequest` is documented as a possible future simplification, not
   a current dependency. We did not add `tabs`, permanent `<all_urls>`, or
   `debugger`.
-
-## Code provenance procedure
-
-Before copying code from any upstream repository:
-1. Verify the exact repository.
-2. Verify the license.
-3. Verify compatibility with this project.
-4. Record the source in this file.
-5. Add attribution where required.
-6. Update `THIRD_PARTY_NOTICES.md`.
-
-Prefer adapting concepts over copying large modules. Do not copy code from
-repositories whose identity or license cannot be verified.

@@ -28,5 +28,9 @@ See `pnpm-lock.yaml` for the complete dependency graph and versions.
 
 - The only upstream code adopted as a runtime dependency is
   `dom-accessibility-api` (MIT). The other upstream projects studied for this
-  hardening pass (nanobrowser, Page Assist, browser-use) were used for concepts
-  only and contributed no copied code. See `docs/UPSTREAM-REUSE.md`.
+  hardening pass (nanobrowser, Page Assist, browser-use, Hermes Browser
+  Extension, A-Eye Web Chat Assistant, whisper-web-extension) were used for
+  concepts and architectural patterns only; no voice code has been copied verbatim
+  — Hermes Browser Extension patterns are marked for ADAPT (not copy), the rest
+  are PATTERN_ONLY. Adapted fragments will be recorded with exact provenance in
+  `docs/UPSTREAM-REUSE.md` as they are integrated. See `docs/UPSTREAM-REUSE.md`.
