@@ -19,6 +19,18 @@ VOICE_02_LIVE = PENDING
 - Record: date, operator, Chrome version, OS, exact backend commit SHA, build
   command. Keep the record local (git-ignored validation data).
 
+**Scope warning:** this checklist applies ONLY to a build that includes the
+voice code (any checkout at or after the voice merge, or `main`). The frozen
+G1 baseline has **no** `/v1/speech` or `/v1/transcribe` endpoints: running
+these probes against it returns 404/connection errors, which is expected and
+must never be logged as a VOICE failure.
+
+Commands below use `curl.exe` explicitly (PowerShell's bare `curl` is an
+`Invoke-WebRequest` alias with incompatible flags) and one physical line each
+(`^` continuations are cmd.exe-only and fail in PowerShell). Write the JSON
+probe bodies to UTF-8 (no BOM) files first so the `«»` and accented characters
+survive legacy console code pages.
+
 ## 0. Real-NaN precheck (before opening Chrome)
 
 Backend environment (root `.env`, git-ignored; never commit the key):
@@ -47,23 +59,26 @@ env-file.
 2. Health check:
 
    ```bash
-   curl http://127.0.0.1:8787/health
+   curl.exe -s http://127.0.0.1:8787/health
    ```
 
    Expected: `provider=openai-compatible`, `model=qwen3.6`.
 
    - [ ] health reports the expected provider/model
 
-3. Direct TTS probe (synthetic text only, no personal data):
+3. Direct TTS probe (synthetic text only, no personal data). First create the
+   two UTF-8 (no BOM) body files `tts-dora.json` and `tts-alex.json`:
+
+   ```text
+   {"text":"Pulsa «Aceptar y continuar».","voice":"ef_dora"}
+   {"text":"Pulsa «Aceptar y continuar».","voice":"em_alex"}
+   ```
+
+   Then:
 
    ```bash
-   curl -s -o tts-ef_dora.mp3 -w "%{content_type}\n" -X POST http://127.0.0.1:8787/v1/speech ^
-     -H "Content-Type: application/json" ^
-     -d "{\"text\":\"Pulsa «Aceptar y continuar».\",\"voice\":\"ef_dora\"}"
-
-   curl -s -o tts-em_alex.mp3 -w "%{content_type}\n" -X POST http://127.0.0.1:8787/v1/speech ^
-     -H "Content-Type: application/json" ^
-     -d "{\"text\":\"Pulsa «Aceptar y continuar».\",\"voice\":\"em_alex\"}"
+   curl.exe -s -o tts-ef_dora.mp3 -w "%{content_type}\n" -X POST http://127.0.0.1:8787/v1/speech -H "Content-Type: application/json" --data-binary "@tts-dora.json"
+   curl.exe -s -o tts-em_alex.mp3 -w "%{content_type}\n" -X POST http://127.0.0.1:8787/v1/speech -H "Content-Type: application/json" --data-binary "@tts-alex.json"
    ```
 
    - [ ] `ef_dora` returns playable audio (`Content-Type` starts with `audio/`)
@@ -75,8 +90,7 @@ env-file.
    fixture; never real personal information):
 
    ```bash
-   curl -s -X POST http://127.0.0.1:8787/v1/transcribe ^
-     -F "file=@recording.webm" -F "language=es"
+   curl.exe -s -X POST http://127.0.0.1:8787/v1/transcribe -F "file=@recording.webm" -F "language=es"
    ```
 
    - [ ] transcript matches the spoken phrase
