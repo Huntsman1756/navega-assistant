@@ -43,29 +43,50 @@ export function loadRecord(root = REPO_ROOT) {
   return record;
 }
 
-/** Resolve the commit the annotated tag points at (never move the tag). */
+/**
+ * Resolve the commit the annotated tag points at (read-only; never moves the
+ * tag). Local resolution first; CI checkouts may omit annotated tag objects,
+ * so fall back to a single-tag fetch with an explicit refspec, then to a
+ * read-only `git ls-remote` peel query against origin.
+ */
 export function resolveTagSha(tag, root = REPO_ROOT) {
-  let res = spawnSync("git", ["rev-parse", "--verify", `${tag}^{commit}`], {
-    cwd: root,
-    encoding: "utf8",
-  });
+  const attempts = [];
+  const run = (args) => {
+    const r = spawnSync("git", args, { cwd: root, encoding: "utf8", timeout: 60000 });
+    const err = (r.stderr ?? "").trim().split("\n")[0] ?? "";
+    attempts.push(`git ${args.join(" ")} -> exit ${r.status}${err ? ` (${err})` : ""}`);
+    return r;
+  };
+  let res = run(["rev-parse", "--verify", `${tag}^{commit}`]);
   if (res.status !== 0) {
-    // CI checkouts may omit annotated tag objects; fetch just that tag
-    // (read-only: fetch cannot move or rewrite the frozen local refs) and retry.
-    spawnSync("git", ["fetch", "--quiet", "origin", "tag", tag], {
-      cwd: root,
-      encoding: "utf8",
-      timeout: 60000,
-    });
-    res = spawnSync("git", ["rev-parse", "--verify", `${tag}^{commit}`], {
-      cwd: root,
-      encoding: "utf8",
-    });
+    run(["fetch", "--quiet", "origin", `+refs/tags/${tag}:refs/tags/${tag}`]);
+    res = run(["rev-parse", "--verify", `${tag}^{commit}`]);
   }
-  assert.equal(res.status, 0, `git could not resolve tag ${tag}: ${res.stderr.trim()}`);
-  const sha = res.stdout.trim();
-  assert.match(sha, FULL_SHA_RE, `tag ${tag} did not resolve to a full SHA: ${sha}`);
-  return sha;
+  if (res.status === 0) {
+    const sha = res.stdout.trim();
+    assert.match(sha, FULL_SHA_RE, `tag ${tag} did not resolve to a full SHA: ${sha}`);
+    return sha;
+  }
+  const remote = run(["ls-remote", "--tags", "origin", `${tag}^{}`]);
+  if (remote.status === 0) {
+    const line = remote.stdout
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l.includes(`refs/tags/${tag}`));
+    if (line) {
+      const sha = line.split(/\s+/)[0];
+      assert.match(
+        sha,
+        FULL_SHA_RE,
+        `remote peel of ${tag} did not return a full commit SHA: ${line}`,
+      );
+      return sha;
+    }
+    attempts.push(`ls-remote returned no peel line for refs/tags/${tag}`);
+  }
+  assert.fail(
+    `cannot resolve tag ${tag} locally or on origin:\n  ${attempts.join("\n  ")}`,
+  );
 }
 
 export function protocolVersionFromSource(root = REPO_ROOT) {
