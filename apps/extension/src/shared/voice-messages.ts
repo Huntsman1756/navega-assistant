@@ -68,3 +68,38 @@ export async function storeTranscriptFallback(
 export function isStale(ts: number): boolean {
   return Date.now() - ts > VOICE_TRANSCRIPT_TTL_MS;
 }
+
+export type VoiceFeature = "speech" | "transcribe";
+
+/**
+ * Map a failed backend voice response to a specific Spanish status message.
+ *
+ * A 404 means the running backend build does not expose the voice endpoints
+ * at all (e.g. the frozen G1 runtime serving 8787 while the voice-capable
+ * candidate extension points at it). That must be distinguishable from a
+ * missing key (503), an upstream timeout (504) or a plain network failure
+ * (status 0) — otherwise the user just hears nothing and the operator debugs
+ * blind.
+ */
+export function voiceErrorMessage(feature: VoiceFeature, status: number, code?: string): string {
+  if (status === 404) {
+    return "El backend no ofrece voz: usa el backend de la versión con voz.";
+  }
+  if (status === 503) {
+    return "Falta la clave de voz en el backend.";
+  }
+  if (status === 504) {
+    return feature === "speech"
+      ? "El servicio de voz tardó demasiado. Inténtalo de nuevo."
+      : "El servicio de transcripción tardó demasiado. Inténtalo de nuevo.";
+  }
+  if (code === "audio_too_large") {
+    return "La grabación es demasiado grande para el backend.";
+  }
+  if (status === 0) {
+    return "No se pudo conectar con el backend de voz.";
+  }
+  return feature === "speech"
+    ? "No se pudo generar el audio. Inténtalo de nuevo."
+    : "No se pudo transcribir. Inténtalo de nuevo.";
+}

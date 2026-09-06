@@ -472,3 +472,40 @@ All code is original to Navega but follows the patterns documented above.
 **Concepts adapted (pattern only, no code copied):**
 - Per-message TTS play/stop button pattern (TTS button on assistant bubbles)
 - Playback cancellation pattern
+
+### Digital.gov Plain Language guide series (output wording style)
+
+- **Source:** <https://www.plainlanguage.gov/> (redirects to the Digital.gov
+  "Plain language guide series", which carries forward the former
+  PlainLanguage.gov content; archived upstream on GitHub) and its
+  "Principles of plain language" / "Writing for understanding" guides.
+- **Kind:** government guidance documentation (public domain US government
+  work), not a code repository.
+- **Inspected:** 2026-09-06.
+- **Decision:** PATTERN_ONLY. No code involved.
+- **Adopted patterns (prompt wording rules, candidate/post-G1 scope):** write
+  for the specific low-digital-confidence audience; very short sentences
+  (about 12 words); one idea per sentence; everyday spoken words; active
+  voice; concrete and visible wording. These extend the existing anti-jargon
+  rules in `apps/api/src/prompt.ts`.
+
+### Mermaid (diagram rendering evaluation)
+
+- **Repository:** <https://github.com/mermaid-js/mermaid> — docs site
+  <https://mermaid.js.org/intro/> (documentation version seen: 11.17.2).
+- **License:** MIT.
+- **Inspected:** 2026-09-06 (introduction + security notes in docs).
+- **Decision (code):** REJECT. Mermaid's own documentation states the
+  sanitization risk of rendering user-authored diagram text ("precarious to
+  retrieve text from users... hard to guarantee that there are no loop
+  holes"). Our threat model treats page and model output as untrusted; adding
+  a JS SVG renderer into the extension side panel would open a new injection
+  surface and a heavy dependency for a ~380 px text panel.
+- **Decision (pattern):** PATTERN_ONLY — the text-defined flowchart mental
+  model (steps as boxes, progression as arrows, one per line). Implemented as
+  a plain-text "numbered step map" inside the assistant message string; the
+  side panel already renders messages with `white-space: pre-wrap` and
+  `textContent`, so multi-line plain text is safe with zero new dependencies.
+- **Resulting build:** wording-only change in `apps/api/src/prompt.ts`
+  (candidate/post-G1; the frozen G1 runtime at `v0.0.9-p0-g1-baseline` is
+  unaffected).

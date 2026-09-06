@@ -16,7 +16,7 @@
  * - Page Assist (MIT): per-message play/stop concept.
  *   Commit: 7a5bc71ce7a9fcb736dcce471cef5aea10d7faad
  */
-import { isStale } from "../shared/voice-messages";
+import { isStale, voiceErrorMessage } from "../shared/voice-messages";
 import { getBackendUrl } from "../shared/backend-url";
 
 /* ------------------------------------------------------------------ */
@@ -192,7 +192,10 @@ async function playAnswer(assistantText: string): Promise<void> {
     });
 
     if (!res.ok) {
-      setStatus("No se pudo generar el audio. Int\u00E9ntalo de nuevo.");
+      const data = (await res.json().catch(() => null)) as { error?: unknown } | null;
+      setStatus(
+        voiceErrorMessage("speech", res.status, typeof data?.error === "string" ? data.error : undefined),
+      );
       ttsPlaying = false;
       setTtsBtnPlaying(false);
       statusEl.removeAttribute("aria-busy");
@@ -231,11 +234,12 @@ async function playAnswer(assistantText: string): Promise<void> {
     });
 
     await audioEl.play();
-  } catch {
+  } catch (err) {
     ttsPlaying = false;
     setTtsBtnPlaying(false);
     statusEl.removeAttribute("aria-busy");
-    setStatus("No se pudo generar el audio. Int\u00E9ntalo de nuevo.");
+    const timedOut = err instanceof DOMException && err.name === "TimeoutError";
+    setStatus(timedOut ? voiceErrorMessage("speech", 504) : voiceErrorMessage("speech", 0));
   } finally {
     voiceTransitionInFlight = false;
   }

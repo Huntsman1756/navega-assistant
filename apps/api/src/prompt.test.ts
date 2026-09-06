@@ -43,4 +43,31 @@ describe("buildSystemPrompt", () => {
     const p = buildSystemPrompt();
     expect(p).toMatch(/Never invent a control/i);
   });
+
+  it("requires plain short sentences and a single NOW action line", () => {
+    const p = buildSystemPrompt();
+    expect(p).toMatch(/every sentence very short/i);
+    expect(p).toMatch(/one idea per sentence/i);
+    expect(p).toMatch(/Ahora: /);
+    expect(p).toMatch(/Only that action is asked for now/i);
+  });
+
+  it("allows a numbered plain-text step map as orientation, not extra work", () => {
+    const p = buildSystemPrompt();
+    expect(p).toMatch(/text map/i);
+    expect(p).toMatch(/one step per line/i);
+    expect(p).toMatch(/orientation, never extra work/i);
+  });
+
+  it("gives simple spatial words for locating controls", () => {
+    const p = buildSystemPrompt();
+    expect(p).toMatch(/arriba/);
+    expect(p).toMatch(/abajo/);
+    expect(p).toMatch(/a la izquierda/);
+  });
+
+  it("restricts messages to plain text (no markdown/emoji/HTML)", () => {
+    const p = buildSystemPrompt();
+    expect(p).toMatch(/no markdown, no HTML, no emoji/i);
+  });
 });

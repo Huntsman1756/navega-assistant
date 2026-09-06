@@ -10,7 +10,7 @@
  */
 
 import { getBackendUrl } from "../shared/backend-url";
-import { VOICE_TRANSCRIPT_TTL_MS as _TTL } from "../shared/voice-messages";
+import { VOICE_TRANSCRIPT_TTL_MS as _TTL, voiceErrorMessage } from "../shared/voice-messages";
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -208,7 +208,10 @@ async function startRecordingFlow(): Promise<void> {
       });
 
       if (!res.ok) {
-        setStatus("No se pudo transcribir. Cierra esta pestana e intentalo de nuevo.");
+        const data = (await res.json().catch(() => null)) as { error?: unknown } | null;
+        setStatus(
+          voiceErrorMessage("transcribe", res.status, typeof data?.error === "string" ? data.error : undefined),
+        );
         micBtn.disabled = false;
         micBtn.textContent = "Permitir y grabar";
         micBtn.classList.remove("recording");
@@ -233,8 +236,9 @@ async function startRecordingFlow(): Promise<void> {
       micBtn.classList.remove("recording");
 
       await deliverTranscript(data.text, ttlTs);
-    } catch {
-      setStatus("No se pudo transcribir. Cierra esta pestana e intentalo de nuevo.");
+    } catch (err) {
+      const timedOut = err instanceof DOMException && err.name === "TimeoutError";
+      setStatus(voiceErrorMessage("transcribe", timedOut ? 504 : 0));
       micBtn.disabled = false;
       micBtn.textContent = "Permitir y grabar";
       micBtn.classList.remove("recording");

@@ -8,9 +8,12 @@
  * - FIX 3: 30-second recording safety limit is enforced.
  * - FIX 5: Transcript delivery uses synchronous sendMessage check so that
  *   chrome.storage.session is written ONLY when sendMessage fails.
+ * - Voice error mapping: a voiceless backend (404, e.g. the frozen G1
+ *   runtime) is distinguishable from missing key (503), timeout (504) and
+ *   network failure (0).
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { VOICE_TRANSCRIPT_TTL_MS, isStale, trySendMessage, storeTranscriptFallback } from "../shared/voice-messages";
+import { VOICE_TRANSCRIPT_TTL_MS, isStale, trySendMessage, storeTranscriptFallback, voiceErrorMessage } from "../shared/voice-messages";
 import type { VoiceTranscriptMessage } from "../shared/voice-messages";
 import { getBackendUrl } from "../shared/backend-url";
 
@@ -186,5 +189,33 @@ describe("FIX 5: transcript delivery (storage only on sendMessage failure)", () 
     const stored = mockStorage[key!];
     expect(stored).toMatchObject({ text: "hello world", ts });
     expect((stored as { createdAt: number }).createdAt).toBeGreaterThan(0);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Voice error mapping (wrong-backend vs transient failure)          */
+/* ------------------------------------------------------------------ */
+
+describe("voiceErrorMessage", () => {
+  it("names the voiceless-backend case explicitly (404 = wrong build, e.g. frozen G1 runtime)", () => {
+    const msg = voiceErrorMessage("speech", 404);
+    expect(msg).toMatch(/no ofrece voz/i);
+    expect(msg).toMatch(/versión con voz/i);
+  });
+
+  it("separates missing key (503) from upstream timeout (504)", () => {
+    expect(voiceErrorMessage("transcribe", 503)).toMatch(/clave/i);
+    expect(voiceErrorMessage("speech", 504)).toMatch(/tar/i);
+    expect(voiceErrorMessage("speech", 504)).not.toBe(voiceErrorMessage("transcribe", 504));
+  });
+
+  it("reports connection failure for status 0 and surfaces audio_too_large", () => {
+    expect(voiceErrorMessage("speech", 0)).toMatch(/conectar/i);
+    expect(voiceErrorMessage("transcribe", 413, "audio_too_large")).toMatch(/demasiado grande/i);
+  });
+
+  it("falls back to the generic retry messages for other failures", () => {
+    expect(voiceErrorMessage("speech", 500)).toMatch(/No se pudo generar/i);
+    expect(voiceErrorMessage("transcribe", 500)).toMatch(/No se pudo transcribir/i);
   });
 });
