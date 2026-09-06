@@ -28,6 +28,25 @@ Expected additions:
 
 **Purpose:** compare text-only guidance versus text + visual highlight.
 
+## G2 — HIGH-IMPACT CONTROLLED VALIDATION (FUTURE gate, documented only)
+
+**NOT started, NOT scheduled.** G2 may only be planned after G1 produces its
+consolidated evidence and, where applicable, P1 is evaluated.
+
+**Purpose:** test realistic complex/high-impact flow *patterns* after G1/P1
+evidence exists — public-administration-style procedures, identity/recovery
+flows, complex appointment/form patterns.
+
+**Hard constraints:**
+
+- replicas, fixtures, sandbox accounts and synthetic data only;
+- no real credentials, no real transactions, no real secrets;
+- G1 MUST NOT be expanded into live banking / medical / government-sensitive
+  workflows, and G1 results carry **no claimed external validity** for such
+  workflows;
+- the participant-facing protocol remains operator-facilitated (same rule as
+  G1: setup ability is never what is measured).
+
 ## P2 — Assisted Navigation MVP (DOCUMENTED)
 
 **Documented, NOT implemented.**

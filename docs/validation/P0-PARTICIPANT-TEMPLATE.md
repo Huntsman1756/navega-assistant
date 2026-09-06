@@ -10,6 +10,10 @@ medical diagnoses. No real personal data.
 - Alias: P01
 - Functional profile: low digital familiarity / difficulty reading small & dense
   interfaces / difficulty with fine pointing / difficulty with technical terms
+- Pre-session disclosure read/given (see `P0-PROTOCOL.md`): [ ] yes
+- Setup was 100% operator-facilitated (participant installed/configured nothing): [ ] yes
+- Baseline preflight: `git rev-parse HEAD` == `git rev-parse v0.0.9-p0-g1-baseline^{}`
+  (must match `docs/validation/G1-BASELINE.json`): [ ] yes
 
 ## Session flow
 
@@ -34,7 +38,7 @@ abandoned: true
 human_help_requested: true
 human_interventions: 2
 
-ASSISTED
+ ASSISTED
 outcome: DOM_ONLY_SUCCESS        # DOM_ONLY_SUCCESS | DOM_ONLY_FAILURE | UNRESOLVED
 would_vision_plausibly_help: unknown   # yes | no | unknown
 completed: true
@@ -43,6 +47,28 @@ unsafe_guidance: 0
 wrong_guidance: 0
 confusion_events: 1
 assistant_turns: 3
+
+# --- orthogonal progress capture (does NOT replace the fields above) ---
+task_progress: COMPLETED         # COMPLETED | PARTIAL | ABANDONED | TIMEOUT
+last_confirmed_step: completó el formulario y recibió el correo ficticio
+                               # one factual sentence
+
+# --- highlight rubric (only for TARGET_NOT_FOUND; YES needs A+B+C+D) ---
+would_highlight_plausibly_help: UNKNOWN   # YES | NO | UNKNOWN
+highlight_justification: —                # mandatory one-line fact for every YES
+
+# --- follow-up / state alignment (post-action turns) ---
+page_state_changed: NO           # YES | NO | UNKNOWN
+followup_state_alignment: NOT_APPLICABLE
+   # CORRECT_STATE | CORRECT_RECOVERY | WRONG_STATE | UNRESOLVED | NOT_APPLICABLE
+   # WRONG_STATE requires positive contradictory evidence vs the fixture
+
+# --- instruction analysis ---
+instruction_spatial_anchor: COARSE   # NONE | COARSE | PRECISE (actual instruction received)
+
+# --- context / sanitization provenance (existing local evidence only) ---
+context_truncated: NO            # YES | NO | UNKNOWN
+redaction_impact: NONE           # NONE | POSSIBLY_RELEVANT | MATERIAL | UNKNOWN
 
 Outcome:
 POSITIVE_DELTA

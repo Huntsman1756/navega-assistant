@@ -8,21 +8,29 @@ The next open gate is **G1**:
 G1 — P0 HUMAN PRODUCT VALIDATION
 ```
 
-> **G1 artifact:** the G1 artifact is `v0.0.8-p0-g1-baseline` (commit
-> `05898434b480f11a0a8b59e115a150b1e54d10da`). It is a latency / fail-fast
-> closure on top of the runtime-correctness baseline `v0.0.7-p0-g1-baseline`.
-> Concretely: every provider call has a hard `AbortController` deadline
-> (`AI_PROVIDER_TIMEOUT_MS`, default 8000 ms), a distinct `provider_timeout`
-> (HTTP 504) that is never folded into `provider_unavailable`, a browser-side
-> fail-safe deadline (`BACKEND_REQUEST_TIMEOUT_MS = 12000`), local-only
-> `[perf]` console timings (`capture_ms`, `assist_request_ms`,
-> `backend_request_ms`, `provider_ms`, `total_ms`) and friendly Spanish
-> participant-visible errors (technical codes stay in the local console).
-> It still holds the small, **ephemeral current help session** (a bounded
-> conversation so the assistant can answer short follow-ups such as
-> “ya estoy” / “¿y ahora?”) and the **per-origin permission UX** for sites
-> `activeTab` cannot reach. It does **not** add highlighting, autonomous
-> actions or browsing history.
+> **G1 artifact (single source of truth):** `docs/validation/G1-BASELINE.json`.
+> It currently resolves to the annotated tag `v0.0.9-p0-g1-baseline`, commit
+> `dfca83f76dd53aa36c8d8a017da09b79fb7c9df6`, protocol version 3. The tag is
+> frozen: it must never be moved, re-created or substituted with the current
+> HEAD. **P01, P02, P03 and P04 all run against this exact same commit SHA.**
+> Before every session the operator must confirm
+> `git rev-parse HEAD` equals `git rev-parse v0.0.9-p0-g1-baseline^{}`.
+> Obsolete baseline identifiers are rejected by the non-runtime consistency
+> check (`pnpm check:g1-baseline`, part of `pnpm test` / `pnpm verify`).
+> This baseline is the latency / fail-fast and boundary closure on top of the
+> earlier runtime-correctness baselines. Concretely: every provider call has a
+> hard `AbortController` deadline (`AI_PROVIDER_TIMEOUT_MS`, default 8000 ms),
+> a distinct `provider_timeout` (HTTP 504) that is never folded into
+> `provider_unavailable`, a browser-side fail-safe deadline
+> (`BACKEND_REQUEST_TIMEOUT_MS = 12000`), local-only `[perf]` console timings
+> (`capture_ms`, `assist_request_ms`, `backend_request_ms`, `provider_ms`,
+> `total_ms`) and friendly Spanish participant-visible errors (technical codes
+> stay in the local console). It still holds the small, **ephemeral current
+> help session** (a bounded conversation so the assistant can answer short
+> follow-ups such as “ya estoy” / “¿y ahora?”) and the **per-origin permission
+> UX** for sites `activeTab` cannot reach. It does **not** add highlighting,
+> voice, autonomous actions or browsing history. Voice is a later candidate
+> outside the G1 treatment.
 
 Requirement: **real human evidence**, not a technical gate. It is deliberately
 not a single percentage. The gate passes when the qualitative review answers
@@ -150,14 +158,63 @@ ASSISTANT_ACCESS_FRICTION
 The problem is opening/using Navega, not the web page.
 ```
 
-Interpretation is then largely predetermined:
+## Pre-registered decision logic (interpretation cases)
+
+The interpretation below is **pre-registered before P01**. Do not re-fit it
+after seeing results, and do not retroactively assign `WOULD_HIGHLIGHT_PLAUSIBLY_HELP=YES`
+merely because the team wants to build P1.
 
 ```text
-a lot of TARGET_NOT_FOUND            → strong evidence to build P1 highlight
-a lot of MODEL_WRONG                 → improve context/model before P1
-a lot of GUIDANCE_UNCLEAR            → work on conversational policy/UX
-a lot of ASSISTANT_ACCESS_FRICTION   → fix entry/onboarding first
+CASE A — MODEL_WRONG high, TARGET_NOT_FOUND low/moderate
+  Interpretation: context/model problem.
+  Likely decision: ITERATE_P0.
+  Do NOT add highlighting to solve model misunderstanding.
+
+CASE B — MODEL_WRONG low, GUIDANCE_UNCLEAR low, FOLLOWUP_STATE_ALIGNMENT
+mostly CORRECT, TARGET_NOT_FOUND recurring, with evidence-supported
+WOULD_HIGHLIGHT_PLAUSIBLY_HELP = YES cases
+  Interpretation: semantic guidance likely works; physical target
+  localization is the bottleneck.
+  Likely decision: PROCEED_TO_P1.
+  Then compare the SMALLEST intervention first:
+    A. better spatial grounding / text
+    B. highlight overlay
+  The INSTRUCTION_SPATIAL_ANCHOR pattern (see participant template) informs
+  which of A or B to test. Do NOT pre-commit to B.
+
+CASE C — ASSISTANT_ACCESS_FRICTION dominant
+  Interpretation: Navega access/onboarding/permission UX is the bottleneck.
+  Likely decision: ITERATE_P0.
+
+CASE D — NEGATIVE_DELTA / TASK_PROGRESS=ABANDONED broadly across tasks
+without a coherent fixable mechanism
+  Interpretation: possible concept/product mismatch.
+  Consider: STOP_OR_REFRAME.
+
+CASE E — TASK_PROGRESS=PARTIAL frequently improves while COMPLETED does not
+  Interpretation: do NOT classify automatically as "no benefit". Review
+  LAST_CONFIRMED_STEP, human help, confusion, baseline vs assisted progress.
+  This may indicate useful persistence/progress without full completion.
 ```
+
+With N≈3–4 report cases and patterns, not population percentages.
+
+## Directional prior evidence — PageGuide caveat (non-predictive)
+
+External research such as PageGuide (N=94, within-subject, controlled lab,
+university-student population; assistance was a multi-component bundle)
+suggests guided assistance may increase **partial progress and persistence**
+even where full completion is not reached. Treat it ONLY as a directional
+prior motivating the `TASK_PROGRESS` field:
+
+- it does **not** isolate highlighting as the causal component;
+- its participants were not Navega's target population (people with low
+  digital familiarity);
+- its absolute effect sizes must **not** be used as expected or predictive
+  G1 outcomes for Navega. No external percentage belongs in a G1 hypothesis.
+
+Transferable hypothesis: guided, grounded assistance may support persistence
+and target localization. NOT: "Navega should improve completion by X points."
 
 ## Descriptive event — MULTI_ACTION_GUIDANCE
 

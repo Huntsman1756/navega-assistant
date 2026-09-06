@@ -121,10 +121,27 @@ and separately consented to.
 
 ## P0 validation data
 
-P0 validation data remains **local** unless the operator explicitly exports it.
-Validation templates live under `docs/validation/`; real participant data is
-git-ignored and never committed. Participants are referred to by aliases
-(`P01`, `P02`, …). Unnecessary personal data is not collected.
+"P0 validation data stays local" means **local study records**: moderator
+notes, participant templates, observation logs and the consolidated G1
+analysis. Those remain local unless the operator explicitly exports them;
+real participant data is git-ignored and never committed, and participants
+are referred to by aliases (`P01`, `P02`, …). Unnecessary personal data is
+not collected.
+
+It does **not** mean runtime inference is fully local. For G1 configured with
+NaN, each assisted turn follows:
+
+```text
+participant question
++ sanitized/bounded page snapshot
++ bounded recent help conversation
+→ local Navega backend (127.0.0.1)
+→ external NaN AI API
+→ qwen3.6
+```
+
+An explicit Spanish pre-session disclosure of this flow is mandatory before
+each participant; the wording lives in `docs/validation/P0-PROTOCOL.md`.
 
 For G1 (P01–P04), only fixtures, dedicated test accounts and dummy form data
 must be used. Participants must never use real passwords, OTP/verification

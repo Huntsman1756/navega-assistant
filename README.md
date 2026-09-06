@@ -43,7 +43,7 @@ The system does **not** (in P0):
 P0 prototype implementation: COMPLETE
 Source-release readiness: PASS
 OSS publication hygiene: PASS
-Pre-G1 validation baseline: FROZEN (v0.0.7-p0-g1-baseline)
+Pre-G1 validation baseline: FROZEN (v0.0.9-p0-g1-baseline)
 Human product validation: READY TO START (G1)
 P1 development: BLOCKED (product evidence pending)
 ```
@@ -51,19 +51,26 @@ P1 development: BLOCKED (product evidence pending)
 This version is an experimental validation prototype. It is not intended for
 production or unattended use.
 
-The version identifier `0.0.7-p0-g1-baseline` marks the exact implementation
-that is used in human validation. It hardens the runtime so one inaccessible
-child frame can never fail capture of the top page (per-frame isolated
-injection with `frameIds`, never `allFrames:true`), preserves the exact user
-question across a site-permission grant, correlates frame snapshots to the
-captured tab, prioritises accessible frames and bounds the whole serialized
-context (including visible text) with a deterministic global budget. It keeps
-the small, ephemeral current-help-session conversation and per-origin
-permission UX; it does **not** add highlighting, autonomous actions or browsing
-history. Roadmap: see `docs/ROADMAP.md`. The next gate is **G1 — P0 Human
-Product Validation** (see `docs/VALIDATION-PLAN.md`). During G1 the engineering
-baseline is frozen; the decisive artifact is the consolidated G1 report
-(`docs/validation/G1-REPORT-TEMPLATE.md`).
+The frozen G1 engineering baseline is the annotated tag resolved in
+`docs/validation/G1-BASELINE.json` (the single source of truth: tag, full
+commit SHA and protocol version — currently `v0.0.9-p0-g1-baseline`,
+protocol version 3). P01–P04 all run against that exact same commit SHA; the
+tag is frozen and must not be moved or re-created. It hardens the runtime so
+one inaccessible child frame can never fail capture of the top page (per-frame
+isolated injection with `frameIds`, never `allFrames:true`), preserves the
+exact user question across a site-permission grant, correlates frame
+snapshots to the captured tab, prioritises accessible frames, bounds the
+whole serialized context (including visible text) with a deterministic global
+budget, and closes the boundary defects recorded in
+`docs/PRE-P01-SECURITY-CLOSURE.md`. It keeps the small, ephemeral
+current-help-session conversation and per-origin permission UX; it does **not**
+add highlighting, voice, autonomous actions or browsing history. Roadmap: see
+`docs/ROADMAP.md`. The next gate is **G1 — P0 Human Product Validation** (see
+`docs/VALIDATION-PLAN.md`). During G1 the engineering baseline is frozen; the
+decisive artifact is the consolidated G1 report
+(`docs/validation/G1-REPORT-TEMPLATE.md`). A non-runtime consistency check
+(`pnpm check:g1-baseline`, also part of `pnpm test`) fails if any validation
+doc references an obsolete baseline identifier or disagrees with the record.
 
 ## Supported browsers
 
@@ -88,7 +95,9 @@ See `docs/TARGET-ARCHITECTURE.md` for the full target vs current distinction.
 
 ## Local development
 
-Prerequisites: Node.js ≥ 20 and pnpm ≥ 10.
+Prerequisites: Node.js ≥ 22 and pnpm ≥ 10. Node 22 is the version validated in
+CI and required by the backend startup path (native `--env-file`); keep all
+operator documentation consistent with it.
 
 ```bash
 pnpm install
@@ -148,8 +157,13 @@ backend configuration.
   redacted before being stored in the conversation.
 - The **Nueva ayuda** button clears the current help session.
 - No telemetry, analytics SDK or crash reporting by default.
-- P0 validation data stays local unless explicitly exported. See
-  `docs/PRIVACY.md`.
+- P0 validation **study records** (moderator notes, participant templates,
+  observation logs, the consolidated G1 analysis) stay local unless explicitly
+  exported. This does **not** mean inference is local: at runtime the question
+  and a sanitized page snapshot always leave the browser to the self-hosted
+  backend, and the backend forwards them to the **configured AI provider**,
+  which in the G1 deployment is an external API. See `docs/PRIVACY.md` and the
+  pre-session disclosure in `docs/validation/P0-PROTOCOL.md`.
 
 ## Security model
 

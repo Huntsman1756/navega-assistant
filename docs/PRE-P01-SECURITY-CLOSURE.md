@@ -1,9 +1,10 @@
 # PRE-P01 security candidate (not a G1 baseline)
 
-P01 has not started. v0.0.8-p0-g1-baseline remains immutable at
-05898434b480f11a0a8b59e115a150b1e54d10da. This closure repairs confirmed
-SECURITY_BLOCKER / STUDY_VALIDITY_BLOCKER findings; it adds no product capability.
-Automated PASS does not authorize P01 or a v0.0.9 tag.
+P01 has not started. This closure repairs confirmed SECURITY_BLOCKER /
+STUDY_VALIDITY_BLOCKER findings on top of the then-current immutable baseline;
+it adds no product capability. The exact SHA described by this document was
+subsequently annotated `v0.0.9-p0-g1-baseline` — the authoritative tag/SHA
+pair lives in `docs/validation/G1-BASELINE.json` and must never be moved.
 
 ## Contracts
 
@@ -123,3 +124,9 @@ stubs is not a substitute; no permission-dialog automation is required.
 Only after that PASS may the EXACT SAME SHA be annotated v0.0.9-p0-g1-baseline,
 with no intervening code changes. Then update study documents to state P01–P04
 use v0.0.9. Until then: TAG_CREATED=NO and P01_ALLOWED=NO.
+
+> Current status: the annotated tag v0.0.9-p0-g1-baseline exists and resolves
+> to the commit recorded in `docs/validation/G1-BASELINE.json`; study docs now
+> point at that single source of truth. The tag is frozen — never move,
+> re-create or substitute it. Verify per session with
+> `git rev-parse v0.0.9-p0-g1-baseline^{}`.
