@@ -74,22 +74,27 @@ function findSupportedMime(): string {
 
 /**
  * Deliver the transcript back to the side panel via chrome.runtime.sendMessage.
- * Falls back to chrome.storage.session only when sendMessage fails.
+ *
+ * Uses a synchronous chrome.runtime.sendMessage check (try/catch + immediate
+ * chrome.runtime.lastError inspection). When sendMessage succeeds (no lastError),
+ * the transcript goes directly to the side panel -- no storage write.
+ *
+ * Only when sendMessage fails (no listener / no connection) does it fall back
+ * to chrome.storage.session with a short TTL and consume-once semantics.
  */
 async function deliverTranscript(text: string, ts: number): Promise<void> {
-  // Attempt 1: direct message to side panel
-  let sendMessageSucceeded = false;
+  // Attempt 1: direct message to side panel (synchronous check).
+  let sendMessageSucceeded = true;
   try {
-    chrome.runtime.sendMessage({ type: "VOICE_TRANSCRIPT", text, ts }, () => {
-      if (!chrome.runtime.lastError) {
-        sendMessageSucceeded = true;
-      }
-    });
+    chrome.runtime.sendMessage({ type: "VOICE_TRANSCRIPT", text, ts });
+    if (chrome.runtime.lastError) {
+      sendMessageSucceeded = false;
+    }
   } catch {
-    // Silently proceed to fallback
+    sendMessageSucceeded = false;
   }
 
-  // Attempt 2: storage session fallback -- only when sendMessage failed
+  // Attempt 2: storage session fallback -- only when sendMessage failed.
   if (!sendMessageSucceeded) {
     const key = `_nav_voice_transcript_${ts}`;
     await chrome.storage.session.set({
@@ -191,13 +196,12 @@ async function startRecordingFlow(): Promise<void> {
     setStatus("Transcribiendo...");
 
     // Step 3: Send audio to NaN Whisper (using same backend URL policy)
-    const baseUrl = await getBackendUrl().catch(() => "http://localhost:8787");
     const sttForm = new FormData();
     sttForm.append("file", blob, "recording.webm");
     sttForm.append("language", "es");
 
     try {
-      const res = await fetch(`${baseUrl}/v1/transcribe`, {
+      const res = await fetch(`${await getBackendUrl()}/v1/transcribe`, {
         method: "POST",
         body: sttForm,
         signal: AbortSignal.timeout(65000),

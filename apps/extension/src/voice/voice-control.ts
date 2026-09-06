@@ -74,14 +74,6 @@ let recordingTimer: ReturnType<typeof setTimeout> | null = null;
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
 
-async function getBackendBaseUrl(): Promise<string> {
-  try {
-    return await getBackendUrl();
-  } catch {
-    return "http://localhost:8787";
-  }
-}
-
 function setStatus(text: string): void {
   if (typeof performance !== "undefined") {
     console.log(`[perf] voice_status=${text}`);
@@ -192,8 +184,7 @@ async function playAnswer(assistantText: string): Promise<void> {
   statusEl.setAttribute("aria-busy", "true");
 
   try {
-    const baseUrl = await getBackendBaseUrl();
-    const res = await fetch(`${baseUrl}/v1/speech`, {
+    const res = await fetch(`${await getBackendUrl()}/v1/speech`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: assistantText, voice: DEFAULT_TTS_VOICE }),
@@ -395,8 +386,7 @@ async function onRecordingStopped(): Promise<void> {
   sttForm.append("language", "es");
 
   try {
-    const baseUrl = await getBackendBaseUrl();
-    const res = await fetch(`${baseUrl}/v1/transcribe`, {
+    const res = await fetch(`${await getBackendUrl()}/v1/transcribe`, {
       method: "POST",
       body: sttForm,
       signal: AbortSignal.timeout(65000),
