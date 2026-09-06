@@ -509,3 +509,35 @@ All code is original to Navega but follows the patterns documented above.
 - **Resulting build:** wording-only change in `apps/api/src/prompt.ts`
   (candidate/post-G1; the frozen G1 runtime at `v0.0.9-p0-g1-baseline` is
   unaffected).
+
+### GOV.UK Design System — step by step navigation + task list (pattern backlog)
+
+- **Source:** <https://design-system.service.gov.uk/patterns/step-by-step-navigation/>,
+  <https://design-system.service.gov.uk/components/task-list/>
+- **Inspected:** 2026-09-06 (pattern page retrieved in full; content license
+  seen on page: Open Government Licence v3.0).
+- **Decision:** PATTERN_ONLY — deferred to after P01–P04.
+- **Relevant patterns:** end-to-end journey shown as numbered steps with
+  short task names; the user's current task is clearly separated from the
+  rest of the journey; step numbering must be exposed to screen readers;
+  pattern researched through 8 rounds including users with disabilities and
+  people with low digital literacy (directly relevant to our audience).
+- **Not reused:** code. The step-by-step pattern ships no `govuk-frontend`
+  component (prototype-kit plugin only), and nothing visual is added before
+  G1 evidence justifies it.
+- **Follow-up:** see `docs/POST-G1-BACKLOG.md` (shape of `Ruta:` as labels,
+  not re-ordered commands).
+
+### USWDS — process list + step indicator (pattern backlog)
+
+- **Source:** <https://designsystem.digital.gov/components/process-list/>,
+  <https://designsystem.digital.gov/components/step-indicator/> (plus their
+  accessibility-tests subpages).
+- **Inspected:** 2026-09-06 (components exist with explicit accessibility
+  documentation; full source/license inspection pending — adoption deferred).
+- **Decision:** PATTERN_ONLY — deferred to after P01–P04.
+- **Relevant patterns:** accessible representation of sequential steps and
+  current progress ("step X of N" framing) without graphics, SVG or a
+  diagram DSL; structure is expressible in plain text and later, if ever
+  justified, in safe semantic HTML/CSS inside the side panel.
+- **Follow-up:** see `docs/POST-G1-BACKLOG.md`.
