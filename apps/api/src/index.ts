@@ -5,6 +5,11 @@ import { createApp } from "./routes";
 const config = loadConfig();
 const app = createApp(config.provider, config.providerName, config.model, {
   providerTimeoutMs: config.providerTimeoutMs,
+  nanConfig: {
+    ttsEndpoint: config.ttsEndpoint,
+    sttEndpoint: config.sttEndpoint,
+    apiKey: config.nanApiKey,
+  },
 });
 
 const server = startLocalServer(app, config.port);

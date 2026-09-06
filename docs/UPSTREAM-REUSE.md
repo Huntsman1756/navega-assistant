@@ -402,3 +402,73 @@ behaviour and are the source of the engineering decisions below.
   `addHostAccessRequest` is documented as a possible future simplification, not
   a current dependency. We did not add `tabs`, permanent `<all_urls>`, or
   `debugger`.
+
+==================================================
+VOICE-01 / VOICE-02 — ADAPTATION PROVENANCE
+==================================================
+
+The following source fragments were adapted from upstream projects.
+All code is original to Navega but follows the patterns documented above.
+
+### Hermes Browser Extension (VOICE-02 STT upstream)
+
+- **Repository:** <https://github.com/abundantbeing/hermes-browser-extension>
+- **License:** MIT (Copyright 2026 Jon Komet)
+- **Inspected revision:** commit
+  `64f2abe443dddee78313e3b18169474cbd0f4f95` (2026-09-06).
+
+| UPSTREAM FILE | LOCAL FILE | ADAPTATION |
+|---------------|-----------|------------|
+| `extension/sidepanel.js` (lines 3718-4307) | `apps/extension/src/voice/voice-control.ts` | MediaRecorder lifecycle, MIME selection, stream track cleanup, transition guard, TTS playback, transcript delivery |
+| `extension/voice-dictation.js` | `apps/extension/src/voice/dictation.ts` | Permission recovery via visible page, getUserMedia → MediaRecorder → transcript, chrome.storage.session fallback |
+| `extension/voice-dictation.html` | `apps/extension/src/voice/dictation.html` | Visible fallback page structure and UX |
+| `extension/sidepanel.js` (transcript bridge) | `apps/extension/src/shared/voice-messages.ts` | Dual-channel transcript transport (sendMessage + session fallback), TTL, consume-once |
+
+**What was adapted:**
+- Microphone permission recovery: Side Panel → visible dictation page → getUserMedia → MediaRecorder → transcript → chrome.runtime.sendMessage + chrome.storage.session fallback
+- MIME preference ordering: audio/webm;codecs=opus > audio/webm > audio/mp4 > audio/ogg > audio/wav
+- MediaRecorder lifecycle: start → dataavailable chunks → stop → Blob → transcribe
+- Track cleanup: `stream?.getTracks?.().forEach(track => track.stop())`
+- Dual-channel transcript return: `chrome.runtime.sendMessage` (immediate) + `chrome.storage.session` fallback (short TTL 30s, consume-once, immediate delete)
+- Stale result protection: `ts: Date.now()` + 30s TTL check
+- Recording transition guards: `voiceTransitionInFlight` guard against double-click
+- Accessibility: `aria-live="polite"` + `role="status"` + `aria-busy`
+- `canRecordVoiceAudio()` capability check pattern
+- getUserMedia with echo cancellation + noise suppression
+
+**What is NOT reused:**
+- Hermes agent runtime, autonomous browser actions, planning/tool execution
+- Persistent voice history
+- `chrome.storage.local` — Navega uses `chrome.storage.session` + `chrome.runtime.sendMessage`
+- `VOICE_DRAFT_STORAGE_KEY` / `hermesVoiceDraft` — Navega uses its own ephemeral keys
+
+### whisper-web-extension (VOICE state machine pattern)
+
+- **Repository:** <https://github.com/takahirox/whisper-web-extension>
+- **License:** MIT (Copyright 2024 Takahiro)
+- **Inspected revision:** commit `d98d7c078f4e1e6a6c7752ce2f63117b4cd26da8`.
+
+**Concepts adapted (pattern only, no code copied):**
+- MediaRecorder MIME detection loop via `MediaRecorder.isTypeSupported()`
+- Blob lifecycle: `URL.createObjectURL` → transport → `URL.revokeObjectURL`
+- State machine concept for recording states
+
+### A-Eye Web Chat Assistant (accessibility/UX patterns)
+
+- **Repository:** <https://github.com/vincentwun/A-Eye-Web-Chat-Assistant>
+- **License:** MIT (Copyright 2024 Vincent Wun)
+- **Inspected revision:** commit `e9284c5d9e0d26a8938e57b007f0322d7d9cc471`.
+
+**Concepts adapted (pattern only, no code copied):**
+- Accessible voice button UX with `aria-live` region patterns
+- Voice state change messaging (listening / recording / stopped)
+
+### Page Assist (per-message play/stop concept)
+
+- **Repository:** <https://github.com/n4ze3m/page-assist>
+- **License:** MIT (Copyright 2023 Muhammed Nazeem)
+- **Inspected revision:** commit `7a5bc71ce7a9fcb736dcce471cef5aea10d7faad`.
+
+**Concepts adapted (pattern only, no code copied):**
+- Per-message TTS play/stop button pattern (TTS button on assistant bubbles)
+- Playback cancellation pattern

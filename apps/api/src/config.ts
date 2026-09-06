@@ -13,6 +13,8 @@ export const DEFAULT_PROVIDER_TIMEOUT_MS = 8000;
 export const MIN_PROVIDER_TIMEOUT_MS = 1000;
 export const MAX_PROVIDER_TIMEOUT_MS = 30000;
 
+export const DEFAULT_NAN_BASE_URL = "https://api.nan.builders";
+
 /**
  * Parses AI_PROVIDER_TIMEOUT_MS defensively. Anything that is not an integer
  * within [MIN, MAX] is treated as a misconfiguration: warn and fall back to
@@ -42,6 +44,9 @@ export interface ApiConfig {
   model?: string;
   /** Hard timeout (ms) on each provider call. Default 8000. */
   providerTimeoutMs: number;
+  ttsEndpoint?: string;
+  sttEndpoint?: string;
+  nanApiKey?: string;
 }
 
 /**
@@ -80,5 +85,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
 
   const port = Number(env.PORT || OPERATOR_API_PORT);
   const providerTimeoutMs = parseProviderTimeoutMs(env.AI_PROVIDER_TIMEOUT_MS);
-  return { port, provider, providerName, model, providerTimeoutMs };
+
+  const nanBaseUrl = env.NAN_BASE_URL?.trim() || DEFAULT_NAN_BASE_URL;
+  const ttsEndpoint = env.NAVIGANA_TTS_ENDPOINT?.trim() || `${nanBaseUrl}/v1/audio/speech`;
+  const sttEndpoint = env.NAVIGANA_STT_ENDPOINT?.trim() || `${nanBaseUrl}/v1/audio/transcriptions`;
+  const nanApiKey = env.NAVIGANA_API_KEY?.trim();
+
+  return { port, provider, providerName, model, providerTimeoutMs, ttsEndpoint, sttEndpoint, nanApiKey };
 }

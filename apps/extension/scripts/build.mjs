@@ -25,6 +25,7 @@ await build({
     "content/extract": resolve(root, "src/content/extract.ts"),
     "service-worker/index": resolve(root, "src/service-worker/index.ts"),
     "sidepanel/index": resolve(root, "src/sidepanel/script.ts"),
+    "voice/dictation": resolve(root, "src/voice/dictation.ts"),
   },
   bundle: true,
   outdir: outDir,
@@ -40,5 +41,7 @@ copyFileSync(resolve(root, "manifest", "manifest.json"), resolve(outDir, "manife
 const sidePanelDir = resolve(outDir, "sidepanel");
 copyFileSync(resolve(root, "src", "sidepanel", "index.html"), resolve(sidePanelDir, "index.html"));
 copyFileSync(resolve(root, "src", "sidepanel", "styles.css"), resolve(sidePanelDir, "styles.css"));
+const voiceDir = resolve(outDir, "voice");
+copyFileSync(resolve(root, "src", "voice", "dictation.html"), resolve(voiceDir, "dictation.html"));
 
 console.log("Extension built to", outDir);

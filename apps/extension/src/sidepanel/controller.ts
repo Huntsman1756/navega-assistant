@@ -8,6 +8,7 @@
  */
 import { HelpSessionSchema, P0AssistantDecisionSchema, type AccessibleDOMSnapshot, type HelpSession, type HelpTurn, type PageContext } from "@guided-web/protocol";
 import type { AssistResultMessage } from "../shared/messages";
+import type { VoiceHandle } from "../voice/voice-control";
 import { sanitizeOutbound, sanitizeCapturedData } from "./outbound";
 import { capturePageContext } from "./capture";
 import {
@@ -115,6 +116,7 @@ export interface ControllerHandle {
   denyOrigin(): void;
   onKeydown(event: KeyboardEvent): void;
   currentSession(): HelpSession;
+  setVoiceHandle(handle: VoiceHandle | null): void;
 }
 
 export function createController(facade: ChromeFacade, els: ControllerElements): ControllerHandle {
@@ -124,6 +126,8 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
   /** Awaiting permission for a specific origin; the retry context. */
   let pendingHelpRequest: PendingHelpRequest | null = null;
   let inFlight = false;
+  /** Voice controller handle, set by script.ts after initVoiceController. */
+  let voiceHandle: VoiceHandle | null = null;
 
   async function ensureSession(): Promise<HelpSession> {
     if (session) return session;
@@ -142,7 +146,24 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
     body.className = "turn-text";
     body.textContent = turn.text;
     article.append(who, body);
+    if (turn.role === "assistant") {
+      const actions = document.createElement("div");
+      actions.className = "turn-actions";
+      const ttsBtn = document.createElement("button");
+      ttsBtn.className = "voice-tts-btn";
+      ttsBtn.textContent = "Escuchar";
+      ttsBtn.setAttribute("aria-label", "Escuchar respuesta con voz");
+      ttsBtn.setAttribute("data-assistant-text", turn.text);
+      ttsBtn.addEventListener("click", () => {
+        voiceHandle?.playAnswer(turn.text);
+        ttsBtn.textContent = "Detener";
+        ttsBtn.classList.add("playing");
+      });
+      actions.append(ttsBtn);
+      article.append(actions);
+    }
     els.conversation.append(article);
+    els.conversation.setAttribute("data-voice-available", "true");
   }
 
   function renderEmptyState(): void {
@@ -392,6 +413,10 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
     })();
   }
 
+  function setVoiceHandle(handle: VoiceHandle | null): void {
+    voiceHandle = handle;
+  }
+
   return {
     init,
     askHelp,
@@ -400,6 +425,7 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
     denyOrigin,
     onKeydown,
     currentSession: () => session as HelpSession,
+    setVoiceHandle,
   };
 }
 

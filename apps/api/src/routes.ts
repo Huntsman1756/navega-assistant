@@ -3,6 +3,11 @@ import { bodyLimit } from "hono/body-limit";
 
 export const MAX_BODY_BYTES = 512 * 1024;
 export const MAX_PROVIDER_CALLS = 2;
+export const MAX_TTS_TEXT_CHARS = 500;
+export const MAX_TRANSCRIBE_BODY_BYTES = 25 * 1024 * 1024;
+export const TTS_TIMEOUT_MS = 30000;
+export const STT_TIMEOUT_MS = 60000;
+export const KOKORO_VOICES = ["ef_dora", "em_alex"] as const;
 import type { AIProvider } from "@guided-web/provider";
 import {
   AssistRequestSchema,
@@ -57,6 +62,36 @@ function withProviderTimeout<T>(
   });
 }
 
+export interface NanConfig {
+  ttsEndpoint?: string;
+  sttEndpoint?: string;
+  apiKey?: string;
+}
+
+type SpeechRequestResult =
+  | { ok: true; text: string; voice: string }
+  | { ok: false; reason: "invalid_request" | "invalid_voice" | "text_too_long" };
+
+function parseSpeechRequest(body: unknown): SpeechRequestResult {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { ok: false, reason: "invalid_request" };
+  }
+  if (Object.keys(body).length !== 2) {
+    return { ok: false, reason: "invalid_request" };
+  }
+  const { text, voice } = body as Record<string, unknown>;
+  if (typeof text !== "string" || text.trim().length === 0) {
+    return { ok: false, reason: "invalid_request" };
+  }
+  if (text.length > MAX_TTS_TEXT_CHARS) {
+    return { ok: false, reason: "text_too_long" };
+  }
+  if (typeof voice !== "string" || !(KOKORO_VOICES as readonly string[]).includes(voice)) {
+    return { ok: false, reason: "invalid_voice" };
+  }
+  return { ok: true, text, voice };
+}
+
 /**
  * Builds the backend HTTP app.
  *
@@ -69,14 +104,16 @@ export function createApp(
   provider: AIProvider,
   providerName: string,
   model?: string,
-  opts?: { providerTimeoutMs?: number },
+  opts?: { providerTimeoutMs?: number; nanConfig?: NanConfig },
 ): Hono {
   const app = new Hono();
   const providerTimeoutMs = opts?.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
+  const nanConfig = opts?.nanConfig;
 
   let activeCalls = 0;
   app.get("/health", (c) => c.json({ ok: true, provider: providerName, model }));
   app.use("/v1/assist", bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json({ error: "body_too_large" }, 413) }));
+  app.use("/v1/transcribe", bodyLimit({ maxSize: MAX_TRANSCRIBE_BODY_BYTES, onError: (c) => c.json({ error: "audio_too_large" }, 413) }));
 
   app.post("/v1/assist", async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -163,6 +200,106 @@ export function createApp(
       provider: response.provider,
       model: response.model ?? model,
     });
+  });
+
+  app.post("/v1/speech", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const parsed = parseSpeechRequest(body);
+    if (!parsed.ok) {
+      return c.json({ error: parsed.reason }, 400);
+    }
+    const { text, voice } = parsed;
+    const { ttsEndpoint, apiKey } = nanConfig ?? {};
+    if (!ttsEndpoint || !apiKey) {
+      return c.json({ error: "speech_unavailable" }, 503);
+    }
+    const ttsCtrl = new AbortController();
+    const ttsTimer = setTimeout(() => ttsCtrl.abort(), TTS_TIMEOUT_MS);
+    try {
+      const res = await fetch(ttsEndpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          Accept: "audio/*",
+        },
+        body: JSON.stringify({ model: "kokoro", input: text, voice }),
+        signal: ttsCtrl.signal,
+      });
+      if (!res.ok) {
+        return c.json({ error: "speech_unavailable" }, 502);
+      }
+      const audio = await res.arrayBuffer();
+      return new Response(audio, {
+        status: 200,
+        headers: { "Content-Type": "application/octet-stream" },
+      });
+    } catch {
+      const timedOut = ttsCtrl.signal.aborted;
+      return c.json(
+        { error: timedOut ? "speech_timeout" : "speech_unavailable" },
+        timedOut ? 504 : 502,
+      );
+    } finally {
+      clearTimeout(ttsTimer);
+      ttsCtrl.abort();
+    }
+  });
+
+  app.post("/v1/transcribe", async (c) => {
+    let form: FormData;
+    try {
+      form = await c.req.formData();
+    } catch {
+      return c.json({ error: "invalid_request" }, 400);
+    }
+    const file = form.get("file");
+    if (!(file instanceof File)) {
+      return c.json({ error: "missing_file" }, 400);
+    }
+    if (file.size > MAX_TRANSCRIBE_BODY_BYTES) {
+      return c.json({ error: "audio_too_large" }, 413);
+    }
+    const rawLanguage = form.get("language");
+    const language = typeof rawLanguage === "string" && rawLanguage.trim() ? rawLanguage.trim() : "es";
+
+    const { sttEndpoint, apiKey } = nanConfig ?? {};
+    if (!sttEndpoint || !apiKey) {
+      return c.json({ error: "transcribe_unavailable" }, 503);
+    }
+
+    const sttForm = new FormData();
+    sttForm.append("file", file);
+    sttForm.append("model", "whisper");
+    sttForm.append("language", language);
+
+    const sttCtrl = new AbortController();
+    const sttTimer = setTimeout(() => sttCtrl.abort(), STT_TIMEOUT_MS);
+    try {
+      const res = await fetch(sttEndpoint, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: sttForm,
+        signal: sttCtrl.signal,
+      });
+      if (!res.ok) {
+        return c.json({ error: "transcribe_unavailable" }, 502);
+      }
+      const data = (await res.json().catch(() => null)) as { text?: unknown } | null;
+      if (!data || typeof data.text !== "string") {
+        return c.json({ error: "invalid_model_output" }, 502);
+      }
+      return c.json({ text: data.text });
+    } catch {
+      const timedOut = sttCtrl.signal.aborted;
+      return c.json(
+        { error: timedOut ? "transcribe_timeout" : "transcribe_unavailable" },
+        timedOut ? 504 : 502,
+      );
+    } finally {
+      clearTimeout(sttTimer);
+      sttCtrl.abort();
+    }
   });
 
   return app;

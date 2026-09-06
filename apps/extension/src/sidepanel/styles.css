@@ -4,6 +4,7 @@
   --bg: #ffffff;
   --muted: #6b6b6b;
   --accent: #2563eb;
+  --danger: #dc2626;
   --user-bubble: #eef2ff;
   --assistant-bubble: #f1f5f9;
 }
@@ -14,6 +15,7 @@
     --bg: #1b1b1b;
     --muted: #9a9a9a;
     --accent: #7aa2ff;
+    --danger: #f87171;
     --user-bubble: #1e2a44;
     --assistant-bubble: #262626;
   }
@@ -89,6 +91,12 @@ header h1 {
   line-height: 1.45;
 }
 
+.turn-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
 .status {
   font-size: 0.85rem;
   color: var(--muted);
@@ -116,6 +124,62 @@ header h1 {
 .permission-actions {
   display: flex;
   gap: 8px;
+}
+
+.voice-controls {
+  display: flex;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.voice-controls[hidden] {
+  display: none;
+}
+
+.voice-stt-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.voice-stt-btn.recording {
+  border-color: var(--danger);
+  color: var(--danger);
+  border-style: solid;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  animation: pulse-recording 1.5s infinite;
+}
+
+.voice-tts-btn {
+  padding: 6px 10px;
+  border: 1px solid var(--muted);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.voice-tts-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.voice-tts-btn.playing {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .composer {
@@ -178,4 +242,23 @@ button:disabled {
   width: 100%;
   padding: 6px;
   font: inherit;
+}
+
+.recording-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: pulse-dot 1s infinite;
+}
+
+@keyframes pulse-recording {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
 }
