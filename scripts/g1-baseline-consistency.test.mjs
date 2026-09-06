@@ -45,10 +45,23 @@ export function loadRecord(root = REPO_ROOT) {
 
 /** Resolve the commit the annotated tag points at (never move the tag). */
 export function resolveTagSha(tag, root = REPO_ROOT) {
-  const res = spawnSync("git", ["rev-parse", "--verify", `${tag}^{commit}`], {
+  let res = spawnSync("git", ["rev-parse", "--verify", `${tag}^{commit}`], {
     cwd: root,
     encoding: "utf8",
   });
+  if (res.status !== 0) {
+    // CI checkouts may omit annotated tag objects; fetch just that tag
+    // (read-only: fetch cannot move or rewrite the frozen local refs) and retry.
+    spawnSync("git", ["fetch", "--quiet", "origin", "tag", tag], {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 60000,
+    });
+    res = spawnSync("git", ["rev-parse", "--verify", `${tag}^{commit}`], {
+      cwd: root,
+      encoding: "utf8",
+    });
+  }
   assert.equal(res.status, 0, `git could not resolve tag ${tag}: ${res.stderr.trim()}`);
   const sha = res.stdout.trim();
   assert.match(sha, FULL_SHA_RE, `tag ${tag} did not resolve to a full SHA: ${sha}`);
