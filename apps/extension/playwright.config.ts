@@ -1,9 +1,9 @@
 import { defineConfig } from "@playwright/test";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { E2E_API_PORT } from "@guided-web/protocol";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const API_PORT = 18787;
 const FIXTURES_PORT = 14173;
 
 export default defineConfig({
@@ -19,9 +19,9 @@ export default defineConfig({
     {
       command: `node ../api/dist/index.js`,
       cwd: __dirname,
-      url: `http://localhost:${API_PORT}/health`,
+      url: `http://localhost:${E2E_API_PORT}/health`,
       reuseExistingServer: false,
-      env: { AI_PROVIDER: "mock", PORT: String(API_PORT) },
+      env: { AI_PROVIDER: "mock", PORT: String(E2E_API_PORT) },
       timeout: 120000,
     },
     {

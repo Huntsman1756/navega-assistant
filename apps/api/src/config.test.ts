@@ -57,3 +57,16 @@ it("rejects missing or incomplete real-provider configuration explicitly", () =>
   expect(() => loadConfig({})).toThrow("AI_PROVIDER must explicitly");
   expect(() => loadConfig({ AI_PROVIDER: "openai-compatible" })).toThrow("are required");
 });
+
+it("normal startup cannot silently run mock provider — mock requires explicit AI_PROVIDER=mock", () => {
+  // Without AI_PROVIDER set → startup fails (not silent mock).
+  expect(() => loadConfig({})).toThrow("AI_PROVIDER must explicitly");
+  // With only partial env → startup fails (not silent mock).
+  expect(() => loadConfig({ PORT: "9999" })).toThrow("AI_PROVIDER must explicitly");
+  // Mock requires explicit opt-in.
+  const cfg = loadConfig({ AI_PROVIDER: "mock" });
+  expect(cfg.providerName).toBe("mock");
+  // openai-compatible requires full config.
+  const real = loadConfig({ AI_PROVIDER: "openai-compatible", AI_BASE_URL: "https://x.com", AI_API_KEY: "k", AI_MODEL: "m" });
+  expect(real.providerName).toBe("openai-compatible");
+});

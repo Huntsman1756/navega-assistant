@@ -105,7 +105,7 @@ export function boundContext(context: PageContext, maxTotalElements = MAX_TOTAL_
   if (maxTotalCharacters < 100) throw new Error("context budget too small");
   const source = context.frames.slice(0, MAX_FRAMES);
   const out: PageContext = { schemaVersion: 1, topFrameId: context.topFrameId, frames: [], truncated: true };
-  const fits = () => JSON.stringify(out).length <= maxTotalCharacters - 1;
+  const fits = () => JSON.stringify(out).length <= maxTotalCharacters;
   for (const f of source) {
     const snapshot = f.snapshot;
     const next: FrameSnapshot = {

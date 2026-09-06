@@ -1,11 +1,15 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { buildPageContext } from "@guided-web/accessible-dom";
-import type { AccessibleDOMSnapshot } from "@guided-web/protocol";
+import { AccessibleDOMSnapshotSchema, OPERATOR_API_PORT, type AccessibleDOMSnapshot } from "@guided-web/protocol";
 import { rememberCaptureSecrets, sanitizeOutbound } from "../src/sidepanel/outbound";
 import { requestAssist } from "../src/service-worker/logic";
 import { createApp } from "../../api/src/routes";
 import { OpenAICompatibleProvider } from "../../../packages/provider/src/openai-compatible-provider";
+
+// E2E mock backend uses a dedicated port (E2E_API_PORT = 18787); this test never
+// routes traffic to the OPERATOR_API_PORT (8787). The URL below is only used by
+// requestAssist's signature; the actual fetch is provided via fetchImpl override.
 
 test("built extractor + real browser DOM through complete provider serialization excludes all markers", async ({ page }) => {
   const bundle = readFileSync(new URL("../dist/content/extract.js", import.meta.url), "utf8");
@@ -16,6 +20,8 @@ test("built extractor + real browser DOM through complete provider serialization
   await page.evaluate(bundle);
   const captured = await page.evaluate(() => (window as unknown as { captured: { snapshot: AccessibleDOMSnapshot; sensitiveValues: string[] } }).captured);
   expect(captured.sensitiveValues).toHaveLength(4);
+  // AccessibleDOMSnapshotSchema must accept the captured snapshot before bounding.
+  expect(AccessibleDOMSnapshotSchema.safeParse(captured.snapshot).success).toBe(true);
   const context = buildPageContext(0, [{ frameId: 0, accessible: true, snapshot: captured.snapshot }]);
   rememberCaptureSecrets(context, captured.sensitiveValues);
   const markers = ['SECRET_PASSWORD_X91', 'SECRET_OTP_938271', 'SECRET_RECOVERY_XYZ', 'SECRET_API_KEY_X92'];
@@ -28,7 +34,7 @@ test("built extractor + real browser DOM through complete provider serialization
   };
   try {
     const app = createApp(new OpenAICompatibleProvider({ baseUrl: 'https://provider.invalid/v1', apiKey: 'synthetic-only', model: 'qwen3.6' }), 'openai-compatible', 'qwen3.6');
-    expect((await requestAssist('http://localhost:8787', payload.context, payload.question, payload.session, async (_url, init) => app.request('/v1/assist', init))).ok).toBe(true);
+    expect((await requestAssist(`http://localhost:${OPERATOR_API_PORT}`, payload.context, payload.question, payload.session, async (_url, init) => app.request('/v1/assist', init))).ok).toBe(true);
     expect(serialized.includes('Valid CTA')).toBe(true);
     for (const marker of [...markers, 'SECRET_QUERY_X93', 'SECRET_FRAGMENT_X94']) expect(serialized.includes(marker)).toBe(false);
   } finally { globalThis.fetch = originalFetch; }

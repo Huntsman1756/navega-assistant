@@ -10,6 +10,7 @@ import {
   HelpTurnSchema,
   FrameSnapshotSchema,
   PageContextSchema,
+  MAX_TOTAL_CONTEXT_ELEMENTS,
 } from "./index";
 
 const validSnapshot = {
@@ -174,6 +175,91 @@ describe("ContextModeSchema", () => {
   it("allows DOM_ONLY and DOM_PLUS_VISION", () => {
     expect(ContextModeSchema.safeParse("DOM_ONLY").success).toBe(true);
     expect(ContextModeSchema.safeParse("DOM_PLUS_VISION").success).toBe(true);
+  });
+});
+
+describe("PageContextSchema element boundary (219/220/221)", () => {
+  // Minimal element to keep JSON within budget while testing element counts.
+  function mkEl(i: number) {
+    return { id: String(i), tag: "b", interactive: true };
+  }
+
+  function buildContext(elementsPerFrame: number, numFrames: number) {
+    const frames = Array.from({ length: numFrames }, (_, fi) => ({
+      frameId: fi,
+      parentFrameId: fi === 0 ? -1 : 0,
+      origin: "https://f.example",
+      accessible: true,
+      snapshot: {
+        schemaVersion: 1,
+        snapshotId: "s",
+        page: { url: "https://f.example", origin: "https://f.example", title: "T" },
+        elements: Array.from({ length: elementsPerFrame }, (_, i) => mkEl(i)),
+      },
+    }));
+    return { schemaVersion: 1, topFrameId: 0, frames };
+  }
+
+  it("219 elements across frames → ACCEPT", () => {
+    // 110 + 109 = 219 (per-frame max 200 satisfied)
+    const frame0 = { frameId: 0, parentFrameId: -1, origin: "https://f.example", accessible: true,
+      snapshot: { schemaVersion: 1, snapshotId: "s", page: { url: "https://f.example", origin: "https://f.example", title: "T" }, elements: Array.from({ length: 110 }, (_, i) => mkEl(i)) } };
+    const frame1 = { frameId: 1, parentFrameId: 0, origin: "https://f.example", accessible: true,
+      snapshot: { schemaVersion: 1, snapshotId: "s", page: { url: "https://f.example", origin: "https://f.example", title: "T" }, elements: Array.from({ length: 109 }, (_, i) => mkEl(i)) } };
+    const ctx = { schemaVersion: 1, topFrameId: 0, frames: [frame0, frame1] };
+    const totalEls = ctx.frames.reduce((n, f) => n + f.snapshot.elements.length, 0);
+    expect(totalEls).toBe(219);
+    const r = PageContextSchema.safeParse(ctx);
+    expect(r.success).toBe(true);
+  });
+
+  it("220 elements across frames → ACCEPT", () => {
+    // 110 + 110 = 220
+    const ctx = buildContext(110, 2);
+    const totalEls = ctx.frames.reduce((n, f) => n + f.snapshot.elements.length, 0);
+    expect(totalEls).toBe(220);
+    const r = PageContextSchema.safeParse(ctx);
+    expect(r.success).toBe(true);
+  });
+
+  it("221 elements across frames → REJECT", () => {
+    // 111 + 110 = 221
+    const frames = [
+      { frameId: 0, parentFrameId: -1, origin: "https://f.example", accessible: true,
+        snapshot: { schemaVersion: 1, snapshotId: "s", page: { url: "https://f.example", origin: "https://f.example", title: "T" }, elements: Array.from({ length: 111 }, (_, i) => mkEl(i)) } },
+      { frameId: 1, parentFrameId: 0, origin: "https://f.example", accessible: true,
+        snapshot: { schemaVersion: 1, snapshotId: "s", page: { url: "https://f.example", origin: "https://f.example", title: "T" }, elements: Array.from({ length: 110 }, (_, i) => mkEl(i + 111)) } },
+    ];
+    const ctx = { schemaVersion: 1, topFrameId: 0, frames };
+    const r = PageContextSchema.safeParse(ctx);
+    expect(r.success).toBe(false);
+  });
+
+  it("220 elements split across multiple frames → ACCEPT", () => {
+    const r = PageContextSchema.safeParse(buildContext(110, 2));
+    expect(r.success).toBe(true);
+  });
+
+  it("221 elements split across multiple frames → REJECT", () => {
+    const frames = [
+      { frameId: 0, parentFrameId: -1, origin: "https://f.example", accessible: true,
+        snapshot: { schemaVersion: 1, snapshotId: "s", page: { url: "https://f.example", origin: "https://f.example", title: "T" }, elements: Array.from({ length: 111 }, (_, i) => mkEl(i)) } },
+      { frameId: 1, parentFrameId: 0, origin: "https://f.example", accessible: true,
+        snapshot: { schemaVersion: 1, snapshotId: "s", page: { url: "https://f.example", origin: "https://f.example", title: "T" }, elements: Array.from({ length: 110 }, (_, i) => mkEl(i + 111)) } },
+    ];
+    const ctx = { schemaVersion: 1, topFrameId: 0, frames };
+    const r = PageContextSchema.safeParse(ctx);
+    expect(r.success).toBe(false);
+  });
+
+  it("serialized context at exactly 16000 chars → ACCEPT", () => {
+    const frame = {
+      frameId: 0, parentFrameId: -1, origin: "https://f.example", accessible: true,
+      snapshot: { schemaVersion: 1, snapshotId: "s", page: { url: "https://f.example", origin: "https://f.example", title: "T" }, elements: Array.from({ length: 200 }, (_, i) => mkEl(i)) },
+    };
+    const ctx = { schemaVersion: 1, topFrameId: 0, frames: [frame] };
+    const r = PageContextSchema.safeParse(ctx);
+    expect(r.success).toBe(true);
   });
 });
 

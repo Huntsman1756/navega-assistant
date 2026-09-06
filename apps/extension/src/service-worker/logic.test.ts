@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { requestAssist, buildAssistPayload, BACKEND_REQUEST_TIMEOUT_MS } from "./logic";
+import { OPERATOR_API_PORT } from "@guided-web/protocol";
 import type { HelpSession, PageContext } from "@guided-web/protocol";
 
 function context(label: string): PageContext {
@@ -45,8 +46,8 @@ describe("service worker assist logic (stateless, P0-14)", () => {
       );
     };
 
-    const a = await requestAssist("http://localhost:8787", context("a"), "q1", emptySession(), fetchImpl);
-    const b = await requestAssist("http://localhost:8787", context("b"), "q2", emptySession(), fetchImpl);
+    const a = await requestAssist(`http://localhost:${OPERATOR_API_PORT}`, context("a"), "q1", emptySession(), fetchImpl);
+    const b = await requestAssist(`http://localhost:${OPERATOR_API_PORT}`, context("b"), "q2", emptySession(), fetchImpl);
     expect(a).toMatchObject({ type: "GWA_ASSIST_RESULT", ok: true });
     expect(b).toMatchObject({ type: "GWA_ASSIST_RESULT", ok: true });
     // Each request must reach the backend fresh — no cached/stale reuse.
@@ -62,15 +63,15 @@ describe("service worker assist logic (stateless, P0-14)", () => {
         ),
       );
     // New closure each time = new worker instance.
-    const first = await requestAssist("http://localhost:8787", context("x"), "q", emptySession(), fetchImpl);
-    const second = await requestAssist("http://localhost:8787", context("y"), "q", emptySession(), fetchImpl);
+    const first = await requestAssist(`http://localhost:${OPERATOR_API_PORT}`, context("x"), "q", emptySession(), fetchImpl);
+    const second = await requestAssist(`http://localhost:${OPERATOR_API_PORT}`, context("y"), "q", emptySession(), fetchImpl);
     expect(first).toMatchObject({ ok: true });
     expect(second).toMatchObject({ ok: true });
   });
 
   it("returns ok:false (and never a stale/valid-looking answer) on backend failure", async () => {
     const fetchImpl = () => Promise.reject(new Error("network"));
-    const res = await requestAssist("http://localhost:8787", context("z"), "q", emptySession(), fetchImpl);
+    const res = await requestAssist(`http://localhost:${OPERATOR_API_PORT}`, context("z"), "q", emptySession(), fetchImpl);
     expect(res).toEqual({ type: "GWA_ASSIST_RESULT", ok: false, error: "network" });
   });
 
@@ -98,7 +99,7 @@ describe("backend fail-safe deadline (browser-side)", () => {
         headers: { "Content-Type": "application/json" },
       });
     };
-    const res = await requestAssist("http://localhost:8787", context("a"), "q", emptySession(), fetchImpl);
+    const res = await requestAssist(`http://localhost:${OPERATOR_API_PORT}`, context("a"), "q", emptySession(), fetchImpl);
     expect(res.ok).toBe(true);
     expect(seenSignal).toBeInstanceOf(AbortSignal);
   });
@@ -114,7 +115,7 @@ describe("backend fail-safe deadline (browser-side)", () => {
         );
       });
     const res = await requestAssist(
-      "http://localhost:8787",
+      `http://localhost:${OPERATOR_API_PORT}`,
       context("h"),
       "q",
       emptySession(),
@@ -130,7 +131,7 @@ describe("backend fail-safe deadline (browser-side)", () => {
         status: 504,
         headers: { "Content-Type": "application/json" },
       });
-    const res = await requestAssist("http://localhost:8787", context("t"), "q", emptySession(), fetchImpl);
+    const res = await requestAssist(`http://localhost:${OPERATOR_API_PORT}`, context("t"), "q", emptySession(), fetchImpl);
     expect(res).toEqual({ type: "GWA_ASSIST_RESULT", ok: false, error: "provider_timeout" });
   });
 
@@ -138,7 +139,7 @@ describe("backend fail-safe deadline (browser-side)", () => {
     const fetchImpl = async () => {
       throw new TypeError("fetch failed");
     };
-    const res = await requestAssist("http://localhost:8787", context("n"), "q", emptySession(), fetchImpl);
+    const res = await requestAssist(`http://localhost:${OPERATOR_API_PORT}`, context("n"), "q", emptySession(), fetchImpl);
     expect(res).toEqual({ type: "GWA_ASSIST_RESULT", ok: false, error: "network" });
   });
 
@@ -156,7 +157,7 @@ describe("backend fail-safe deadline (browser-side)", () => {
         );
       });
     const res = await requestAssist(
-      "http://localhost:8787",
+      `http://localhost:${OPERATOR_API_PORT}`,
       context("l"),
       "q",
       emptySession(),
@@ -186,7 +187,7 @@ describe("backend fail-safe deadline (browser-side)", () => {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
-      await requestAssist("http://localhost:8787", context("CONFIDENTIAL-PAGE"), "pregunta privada 99", emptySession(), fetchImpl);
+      await requestAssist(`http://localhost:${OPERATOR_API_PORT}`, context("CONFIDENTIAL-PAGE"), "pregunta privada 99", emptySession(), fetchImpl);
     } finally {
       spy.mockRestore();
     }
@@ -200,6 +201,6 @@ describe("backend fail-safe deadline (browser-side)", () => {
 
 it("rejects malformed or wrong-version envelopes and empty/invalid decisions", async () => {
   for (const data of [{}, null, { protocolVersion: 2, mode: "DOM_ONLY", decision: { kind: "explain", message: "ok" } }, ...["", "   "].map(message => ({ protocolVersion: 3, mode: "DOM_ONLY", decision: { kind: "explain", message } })), { protocolVersion: 3, mode: "DOM_ONLY", decision: { kind: "click", message: "ok" } }]) {
-    expect(await requestAssist("http://localhost:8787", context("a"), "q", emptySession(), okFetch(data))).toMatchObject({ ok: false, error: "invalid_model_output" });
+    expect(await requestAssist(`http://localhost:${OPERATOR_API_PORT}`, context("a"), "q", emptySession(), okFetch(data))).toMatchObject({ ok: false, error: "invalid_model_output" });
   }
 });

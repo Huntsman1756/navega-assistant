@@ -3,8 +3,9 @@ import { resolve, dirname } from "node:path";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildPageContext, MAX_TOTAL_CONTEXT_CHARACTERS, type FrameInput } from "@guided-web/accessible-dom";
+import { E2E_API_PORT } from "@guided-web/protocol";
 
-const API_URL = "http://127.0.0.1:18787";
+const API_URL = `http://127.0.0.1:${E2E_API_PORT}`;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const extractScript = readFileSync(resolve(__dirname, "..", "dist", "content", "extract.js"), "utf8");

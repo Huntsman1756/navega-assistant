@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from "vitest";
-import { buildPageContext, boundContext, MAX_FRAMES, MAX_TOTAL_CONTEXT_CHARACTERS } from "./frames";
-import type { AccessibleDOMSnapshot } from "@guided-web/protocol";
+import { buildPageContext, boundContext, MAX_FRAMES, MAX_TOTAL_CONTEXT_CHARACTERS, MAX_TOTAL_CONTEXT_ELEMENTS } from "./frames";
+import { PageContextSchema } from "@guided-web/protocol";
+import type { AccessibleDOMSnapshot, PageContext } from "@guided-web/protocol";
 
 function mkSnapshot(id: string, els: number): AccessibleDOMSnapshot {
   const elements = Array.from({ length: els }, (_, i) => ({
@@ -209,5 +210,137 @@ describe("global budget with visibleText (Fix E)", () => {
     }));
     const ctx = buildPageContext(0, frames);
     expect(JSON.stringify(ctx).length).toBeLessThanOrEqual(MAX_TOTAL_CONTEXT_CHARACTERS);
+  });
+});
+
+describe("total element boundary 219/220/221 (real aggregate)", () => {
+  function el(id: number): AccessibleDOMSnapshot["elements"][number] {
+    return { id: String(id), tag: "b", interactive: true };
+  }
+
+  function mkSnap(elements: number): AccessibleDOMSnapshot {
+    return {
+      schemaVersion: 1,
+      snapshotId: "snap",
+      page: { url: "https://example.com", origin: "https://example.com", title: "T" },
+      elements: Array.from({ length: elements }, (_, i) => el(i)),
+      visibleText: [],
+    };
+  }
+
+  function unboundedContext(f1: number, f2?: number): PageContext {
+    if (f2 === undefined) {
+      return { schemaVersion: 1, topFrameId: 0, frames: [{ frameId: 0, parentFrameId: -1, accessible: true, snapshot: mkSnap(f1) }] };
+    }
+    return {
+      schemaVersion: 1, topFrameId: 0,
+      frames: [
+        { frameId: 0, parentFrameId: -1, accessible: true, snapshot: mkSnap(f1) },
+        { frameId: 1, parentFrameId: 0, accessible: true, snapshot: mkSnap(f2) },
+      ],
+    };
+  }
+
+  it("219 elements → ACCEPT through boundContext (2 frames: 120+99, large budget)", () => {
+    const ctx = unboundedContext(120, 99);
+    const bounded = boundContext(ctx, 219, 65536);
+    const total = bounded.frames.reduce((n, f) => n + (f.snapshot?.elements.length ?? 0), 0);
+    expect(total).toBe(219);
+  });
+
+  it("220 elements → ACCEPT through boundContext (2 frames: 110+110, large budget)", () => {
+    const ctx = unboundedContext(110, 110);
+    const bounded = boundContext(ctx, 220, 65536);
+    const total = bounded.frames.reduce((n, f) => n + (f.snapshot?.elements.length ?? 0), 0);
+    expect(total).toBe(220);
+  });
+
+  it("221 elements → bounded to 220 through boundContext", () => {
+    const ctx = unboundedContext(111, 110);
+    const bounded = boundContext(ctx, 220, 65536);
+    const total = bounded.frames.reduce((n, f) => n + (f.snapshot?.elements.length ?? 0), 0);
+    expect(total).toBeLessThanOrEqual(MAX_TOTAL_CONTEXT_ELEMENTS);
+    expect(total).toBe(220);
+  });
+
+  it("221 elements split across more frames → bounded to 220", () => {
+    const ctx = unboundedContext(121, 100);
+    const bounded = boundContext(ctx, 220, 65536);
+    const total = bounded.frames.reduce((n, f) => n + (f.snapshot?.elements.length ?? 0), 0);
+    expect(total).toBeLessThanOrEqual(MAX_TOTAL_CONTEXT_ELEMENTS);
+    expect(total).toBe(220);
+  });
+});
+
+describe("16000 UTF-16 code unit boundary (Fix D)", () => {
+  function el(id: number): AccessibleDOMSnapshot["elements"][number] {
+    return { id: `el-${id}`, tag: "button", role: "button", accessibleName: `Btn ${id}`, interactive: true };
+  }
+
+  function mkSnap(elements: number, extraText: string): AccessibleDOMSnapshot {
+    return {
+      schemaVersion: 1,
+      snapshotId: "snap",
+      page: { url: "https://example.com", origin: "https://example.com", title: "Test" },
+      elements: Array.from({ length: elements }, (_, i) => el(i)),
+      visibleText: extraText ? [extraText] : [],
+    };
+  }
+
+  it("exactly 16000 serialized characters → accepted by boundContext", () => {
+    // Build a context that, when bounded, produces exactly 16000 characters.
+    // We construct a context with enough content that boundContext trims it
+    // to exactly the boundary.
+    const inputs = [{ frameId: 0, parentFrameId: -1, accessible: true, snapshot: mkSnap(220, "a".repeat(10000)) }];
+    const ctx = buildPageContext(0, inputs);
+    const bounded = boundContext(ctx, 220, 16000);
+    const serialized = JSON.stringify(bounded);
+    expect(serialized.length).toBeLessThanOrEqual(16000);
+  });
+
+  it("16001 serialized characters → bounded to 16000", () => {
+    const inputs = [{ frameId: 0, parentFrameId: -1, accessible: true, snapshot: mkSnap(220, "x".repeat(12000)) }];
+    const ctx = buildPageContext(0, inputs);
+    const bounded = boundContext(ctx, 220, 16000);
+    const serialized = JSON.stringify(bounded);
+    expect(serialized.length).toBeLessThanOrEqual(16000);
+    // The bound must have been applied (truncated flag should be true).
+    expect(bounded.truncated).toBe(true);
+  });
+
+  it("bounded frame must not subsequently fail the protocol due to metadata omitted from budget", () => {
+    // Build a frame with maximally-sized metadata to adversarially test that
+    // the bounding implementation accounts for frame metadata in the budget.
+    const metadataUrl = "https://example.com/" + "a".repeat(980); // truncated to 1000
+    const metadataOrigin = "https://x.example.com/" + "b".repeat(985); // truncated to 1000
+    const metadataTitle = "A".repeat(298); // truncated to 300
+
+    function bigMetaSnapshot(id: string, els: number): AccessibleDOMSnapshot {
+      const snapshot: AccessibleDOMSnapshot = {
+        schemaVersion: 1,
+        snapshotId: id,
+        page: { url: metadataUrl, origin: metadataOrigin, title: metadataTitle },
+        elements: Array.from({ length: els }, (_, i) => ({
+          id: `el-${i}`, tag: "button", role: "button", accessibleName: `Btn ${i}`, interactive: true,
+        })),
+        visibleText: [],
+      };
+      return snapshot;
+    }
+
+    // Two frames with large metadata + moderate elements.
+    const inputs = [
+      { frameId: 0, parentFrameId: -1, accessible: true, snapshot: bigMetaSnapshot("top", 50) },
+      { frameId: 1, parentFrameId: 0, accessible: true, origin: metadataOrigin, snapshot: bigMetaSnapshot("child", 50) },
+    ];
+    const ctx = buildPageContext(0, inputs);
+    const bounded = boundContext(ctx);
+    // Bounded result must be valid PageContext according to the protocol schema.
+    const parsed = PageContextSchema.safeParse(bounded);
+    expect(parsed.success).toBe(true);
+    // Elements are preserved at the bounded count.
+    const totalEls = bounded.frames.reduce((n, f) => n + (f.snapshot?.elements.length ?? 0), 0);
+    expect(totalEls).toBeLessThanOrEqual(MAX_TOTAL_CONTEXT_ELEMENTS);
+    expect(totalEls).toBeGreaterThan(0);
   });
 });

@@ -13,6 +13,7 @@ import { z } from "zod";
 
 /** Version of the wire protocol. Bump on breaking schema changes. */
 export const PROTOCOL_VERSION = 3 as const;
+export const MAX_TOTAL_CONTEXT_ELEMENTS = 220;
 
 /** Context capture mode. The operator, not the model, chooses the mode in P0. */
 export const ContextModeSchema = z.enum(["DOM_ONLY", "DOM_PLUS_VISION"]);
@@ -129,7 +130,7 @@ export const PageContextSchema = z
   })
   .strict()
   .refine(context => JSON.stringify(context).length <= 16000, "serialized context exceeds 16000 UTF-16 code units")
-  .refine(context => context.frames.reduce((n, f) => n + (f.snapshot?.elements.length ?? 0), 0) <= 220, "too many total context elements");
+  .refine(context => context.frames.reduce((n, f) => n + (f.snapshot?.elements.length ?? 0), 0) <= MAX_TOTAL_CONTEXT_ELEMENTS, "too many total context elements");
 export type PageContext = z.infer<typeof PageContextSchema>;
 
 /**
@@ -259,4 +260,6 @@ export const GuidanceActionSchema = z
     targetId: z.string().optional(),
   })
   .strict();
+
+export { OPERATOR_API_PORT, E2E_API_PORT } from "./ports";
 export type GuidanceAction = z.infer<typeof GuidanceActionSchema>;

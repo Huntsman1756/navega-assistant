@@ -6,9 +6,10 @@
  * self-hostable backend. Provider credentials never live in the extension.
  */
 import { requestAssist } from "./logic";
+import { OPERATOR_API_PORT } from "@guided-web/protocol";
 import type { AssistMessage, AssistResultMessage } from "../shared/messages";
 
-const DEFAULT_BACKEND_URL = "http://localhost:8787";
+const DEFAULT_BACKEND_URL = `http://localhost:${OPERATOR_API_PORT}`;
 
 chrome.runtime.onInstalled.addListener(() => {
   void chrome.sidePanel

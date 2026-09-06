@@ -1,5 +1,6 @@
 import type { AIProvider } from "@guided-web/provider";
 import { MockProvider, OpenAICompatibleProvider } from "@guided-web/provider";
+import { OPERATOR_API_PORT } from "@guided-web/protocol";
 
 /**
  * Hard deadline for a single provider call. The real-provider measurements
@@ -77,7 +78,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       throw new Error('Unknown AI_PROVIDER. Use "mock" or "openai-compatible".');
   }
 
-  const port = Number(env.PORT || 8787);
+  const port = Number(env.PORT || OPERATOR_API_PORT);
   const providerTimeoutMs = parseProviderTimeoutMs(env.AI_PROVIDER_TIMEOUT_MS);
   return { port, provider, providerName, model, providerTimeoutMs };
 }
