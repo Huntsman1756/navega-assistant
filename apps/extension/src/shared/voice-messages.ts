@@ -6,7 +6,7 @@
  * dual-channel delivery (chrome.runtime.sendMessage + chrome.storage.session
  * fallback), short TTL, consume-once, immediate delete.
  *
- * Upstream: Hermes Browser Extension (MIT) — commit 64f2abe443dddee78313e3b18169474cbd0f4f95
+ * Upstream: Hermes Browser Extension (MIT) -- commit 64f2abe443dddee78313e3b18169474cbd0f4f95
  * Files: extension/sidepanel.js (lines 3718-4307), extension/voice-dictation.js
  */
 
@@ -39,7 +39,7 @@ export function trySendMessage(message: VoiceTranscriptMessage): boolean {
   try {
     chrome.runtime.sendMessage(message, () => {
       if (chrome.runtime.lastError) {
-        // No listener — fall through to storage fallback
+        // No listener -- fall through to storage fallback
       }
     });
     return !chrome.runtime.lastError;

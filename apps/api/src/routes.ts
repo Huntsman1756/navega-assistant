@@ -7,6 +7,7 @@ export const MAX_TTS_TEXT_CHARS = 500;
 export const MAX_TRANSCRIBE_BODY_BYTES = 25 * 1024 * 1024;
 export const TTS_TIMEOUT_MS = 30000;
 export const STT_TIMEOUT_MS = 60000;
+export const RECORDING_LIMIT_MS = 30000;
 export const KOKORO_VOICES = ["ef_dora", "em_alex"] as const;
 import type { AIProvider } from "@guided-web/provider";
 import {
@@ -230,9 +231,16 @@ export function createApp(
         return c.json({ error: "speech_unavailable" }, 502);
       }
       const audio = await res.arrayBuffer();
+      // Forward the upstream content-type (e.g. audio/mpeg from Kokoro).
+      // Fallback to audio/mpeg when unknown to maximize native Audio() compatibility.
+      const upstreamCt = res.headers.get("Content-Type");
+      const contentType =
+        upstreamCt && (upstreamCt.startsWith("audio/") || upstreamCt.startsWith("text/plain"))
+          ? upstreamCt
+          : "audio/mpeg";
       return new Response(audio, {
         status: 200,
-        headers: { "Content-Type": "application/octet-stream" },
+        headers: { "Content-Type": contentType },
       });
     } catch {
       const timedOut = ttsCtrl.signal.aborted;

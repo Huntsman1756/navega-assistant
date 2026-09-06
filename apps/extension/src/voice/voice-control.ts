@@ -17,6 +17,7 @@
  *   Commit: 7a5bc71ce7a9fcb736dcce471cef5aea10d7faad
  */
 import { isStale } from "../shared/voice-messages";
+import { getBackendUrl } from "../shared/backend-url";
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -32,7 +33,7 @@ const MIME_ORDER = [
   "audio/wav",
 ];
 
-const BACKEND_BASE = "http://localhost:3456";
+const RECORDING_LIMIT_MS = 30000;
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -67,10 +68,19 @@ let recordingStream: MediaStream | null = null;
 let recordingChunks: Blob[] = [];
 let sttRecording = false;
 let voiceTransitionInFlight = false;
+let recordingTimer: ReturnType<typeof setTimeout> | null = null;
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
+
+async function getBackendBaseUrl(): Promise<string> {
+  try {
+    return await getBackendUrl();
+  } catch {
+    return "http://localhost:8787";
+  }
+}
 
 function setStatus(text: string): void {
   if (typeof performance !== "undefined") {
@@ -81,7 +91,7 @@ function setStatus(text: string): void {
 function setTtsBtnPlaying(playing: boolean): void {
   if (playing) {
     ttsBtnEl.textContent = "Detener";
-    ttsBtnEl.setAttribute("aria-label", "Detener reproducción de audio");
+    ttsBtnEl.setAttribute("aria-label", "Detener reproducci\u00F3n de audio");
   } else {
     ttsBtnEl.textContent = "Escuchar";
     ttsBtnEl.setAttribute("aria-label", "Escuchar respuesta con voz");
@@ -90,13 +100,20 @@ function setTtsBtnPlaying(playing: boolean): void {
 
 function setSttBtnRecording(recording: boolean): void {
   if (recording) {
-    sttBtnEl.textContent = "Detener grabación";
-    sttBtnEl.setAttribute("aria-label", "Detener grabación de voz");
+    sttBtnEl.textContent = "Detener grabaci\u00F3n";
+    sttBtnEl.setAttribute("aria-label", "Detener grabaci\u00F3n de voz");
     sttBtnEl.classList.add("recording");
   } else {
     sttBtnEl.textContent = "Hablar";
-    sttBtnEl.setAttribute("aria-label", "Iniciar grabación de voz");
+    sttBtnEl.setAttribute("aria-label", "Iniciar grabaci\u00F3n de voz");
     sttBtnEl.classList.remove("recording");
+  }
+}
+
+function clearRecordingTimer(): void {
+  if (recordingTimer) {
+    clearTimeout(recordingTimer);
+    recordingTimer = null;
   }
 }
 
@@ -158,7 +175,7 @@ export function initVoiceController(els: VoiceElements): VoiceHandle {
  * VOICE-01: Fetch TTS audio from the backend and play it natively.
  *
  * Uses the NaN Kokoro endpoint (POST /v1/speech).
- * Button toggles: [Escuchar] → [Detener] (while playing/generating).
+ * Button toggles: [Escuchar] \u2192 [Detener] (while playing/generating).
  */
 async function playAnswer(assistantText: string): Promise<void> {
   if (ttsPlaying) {
@@ -171,11 +188,12 @@ async function playAnswer(assistantText: string): Promise<void> {
   voiceTransitionInFlight = true;
   ttsPlaying = true;
   setTtsBtnPlaying(true);
-  setStatus("Generando audio…");
+  setStatus("Generando audio\u2026");
   statusEl.setAttribute("aria-busy", "true");
 
   try {
-    const res = await fetch(`${BACKEND_BASE}/v1/speech`, {
+    const baseUrl = await getBackendBaseUrl();
+    const res = await fetch(`${baseUrl}/v1/speech`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: assistantText, voice: DEFAULT_TTS_VOICE }),
@@ -183,7 +201,7 @@ async function playAnswer(assistantText: string): Promise<void> {
     });
 
     if (!res.ok) {
-      setStatus("No se pudo generar el audio. Inténtalo de nuevo.");
+      setStatus("No se pudo generar el audio. Int\u00E9ntalo de nuevo.");
       ttsPlaying = false;
       setTtsBtnPlaying(false);
       statusEl.removeAttribute("aria-busy");
@@ -191,7 +209,7 @@ async function playAnswer(assistantText: string): Promise<void> {
     }
 
     const blob = await res.blob();
-    setStatus("Reproduciendo…");
+    setStatus("Reproduciendo\u2026");
 
     audioEl = new Audio();
     ttsAudioBlobUrl = URL.createObjectURL(blob);
@@ -226,7 +244,7 @@ async function playAnswer(assistantText: string): Promise<void> {
     ttsPlaying = false;
     setTtsBtnPlaying(false);
     statusEl.removeAttribute("aria-busy");
-    setStatus("No se pudo generar el audio. Inténtalo de nuevo.");
+    setStatus("No se pudo generar el audio. Int\u00E9ntalo de nuevo.");
   } finally {
     voiceTransitionInFlight = false;
   }
@@ -257,12 +275,13 @@ function stopPlaying(): void {
  *
  * Adapted from Hermes Browser Extension permission recovery pattern.
  * Tries getUserMedia directly; if blocked, opens the visible dictation page.
+ * 30-second safety limit enforced.
  */
 async function startRecording(): Promise<void> {
   if (sttRecording) return;
   if (voiceTransitionInFlight) return;
   if (!canRecordVoiceAudio()) {
-    setStatus("El micrófono no está disponible en este navegador.");
+    setStatus("El micr\u00F3fono no est\u00E1 disponible en este navegador.");
     return;
   }
 
@@ -270,8 +289,16 @@ async function startRecording(): Promise<void> {
   sttRecording = true;
   recordingChunks = [];
   setSttBtnRecording(true);
-  setStatus("Escuchando…");
+  setStatus("Escuchando\u2026");
   statusEl.setAttribute("aria-busy", "true");
+
+  // 30-second recording safety limit (per spec).
+  recordingTimer = setTimeout(async () => {
+    if (sttRecording) {
+      setStatus("L\u00EDmite de tiempo alcanzado. Transcribiendo...");
+      stopRecording();
+    }
+  }, RECORDING_LIMIT_MS);
 
   const selectedMime = findSupportedMime();
   const constraints: MediaStreamConstraints = {
@@ -297,6 +324,7 @@ async function startRecording(): Promise<void> {
       await onRecordingStopped();
     };
   } catch (err) {
+    clearRecordingTimer();
     // If getUserMedia fails (permission denied / not available),
     // fall back to the visible dictation page (Hermes pattern).
     const isPermissionError =
@@ -307,20 +335,20 @@ async function startRecording(): Promise<void> {
       sttRecording = false;
       setSttBtnRecording(false);
       statusEl.removeAttribute("aria-busy");
-      setStatus("Se requiere permiso del micrófono. Abriendo página de dictado…");
+      setStatus("Se requiere permiso del micr\u00F3fono. Abriendo p\u00E1gina de dictado\u2026");
       try {
         const dictationUrl = chrome.runtime.getURL("voice/dictation.html");
         window.open(dictationUrl, "_blank", "width=500,height=400");
         voiceTransitionInFlight = false;
       } catch {
-        setStatus("No se pudo abrir la página de dictado. Verifica los permisos del micrófono.");
+        setStatus("No se pudo abrir la p\u00E1gina de dictado. Verifica los permisos del micr\u00F3fono.");
         voiceTransitionInFlight = false;
       }
     } else {
       sttRecording = false;
       setSttBtnRecording(false);
       statusEl.removeAttribute("aria-busy");
-      setStatus("No se pudo acceder al micrófono. Inténtalo de nuevo.");
+      setStatus("No se pudo acceder al micr\u00F3fono. Int\u00E9ntalo de nuevo.");
       voiceTransitionInFlight = false;
     }
   }
@@ -330,6 +358,7 @@ async function startRecording(): Promise<void> {
  * Stop recording and send audio to NaN Whisper for transcription.
  */
 function stopRecording(): void {
+  clearRecordingTimer();
   if (!sttRecording || !mediaRecorder) return;
   try {
     mediaRecorder.stop();
@@ -349,13 +378,14 @@ async function onRecordingStopped(): Promise<void> {
 
   sttRecording = false;
   setSttBtnRecording(false);
-  setStatus("Transcribiendo…");
+  clearRecordingTimer();
+  setStatus("Transcribiendo\u2026");
 
   const blob = new Blob(recordingChunks, { type: recordingChunks[0]?.type ?? "audio/webm" });
   recordingChunks = [];
 
   if (blob.size === 0) {
-    setStatus("No se grabó audio. Inténtalo de nuevo.");
+    setStatus("No se grab\u00F3 audio. Int\u00E9ntalo de nuevo.");
     voiceTransitionInFlight = false;
     return;
   }
@@ -365,28 +395,29 @@ async function onRecordingStopped(): Promise<void> {
   sttForm.append("language", "es");
 
   try {
-    const res = await fetch(`${BACKEND_BASE}/v1/transcribe`, {
+    const baseUrl = await getBackendBaseUrl();
+    const res = await fetch(`${baseUrl}/v1/transcribe`, {
       method: "POST",
       body: sttForm,
       signal: AbortSignal.timeout(65000),
     });
 
     if (!res.ok) {
-      setStatus("No se pudo transcribir. Inténtalo de nuevo.");
+      setStatus("No se pudo transcribir. Int\u00E9ntalo de nuevo.");
       voiceTransitionInFlight = false;
       return;
     }
 
     const data = await res.json().catch(() => null);
     if (!data || typeof data.text !== "string" || data.text.trim().length === 0) {
-      setStatus("Transcripción vacía. Inténtalo de nuevo.");
+      setStatus("Transcripci\u00F3n vac\u00EDa. Int\u00E9ntalo de nuevo.");
       voiceTransitionInFlight = false;
       return;
     }
 
     deliverTranscript(data.text);
   } catch {
-    setStatus("No se pudo transcribir. Inténtalo de nuevo.");
+    setStatus("No se pudo transcribir. Int\u00E9ntalo de nuevo.");
     voiceTransitionInFlight = false;
   }
 }
@@ -402,7 +433,7 @@ function deliverTranscript(text: string): void {
   if (isStale(ts)) {
     console.warn("[navega] voice: transcript discarded (stale)");
     voiceTransitionInFlight = false;
-    setStatus("Transcripción expirada. Inténtalo de nuevo.");
+    setStatus("Transcripci\u00F3n expirada. Int\u00E9ntalo de nuevo.");
     return;
   }
 
@@ -455,6 +486,7 @@ export function cleanupVoice(): void {
     setStatus("");
   }
   voiceTransitionInFlight = false;
+  clearRecordingTimer();
   stopAllTracks(recordingStream);
   recordingStream = null;
   mediaRecorder = null;

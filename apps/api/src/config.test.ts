@@ -70,3 +70,63 @@ it("normal startup cannot silently run mock provider — mock requires explicit 
   const real = loadConfig({ AI_PROVIDER: "openai-compatible", AI_BASE_URL: "https://x.com", AI_API_KEY: "k", AI_MODEL: "m" });
   expect(real.providerName).toBe("openai-compatible");
 });
+
+describe("NaN speech endpoint derivation and API key reuse", () => {
+  it("derives speech endpoints and reuses AI_API_KEY when AI_BASE_URL points at nan.builders", () => {
+    const cfg = loadConfig({
+      AI_PROVIDER: "openai-compatible",
+      AI_BASE_URL: "https://api.nan.builders/v1",
+      AI_API_KEY: "sk-secret-123",
+      AI_MODEL: "qwen3.6",
+    });
+    expect(cfg.nanBaseUrl).toBe("https://api.nan.builders");
+    expect(cfg.ttsEndpoint).toBe("https://api.nan.builders/v1/audio/speech");
+    expect(cfg.sttEndpoint).toBe("https://api.nan.builders/v1/audio/transcriptions");
+    expect(cfg.nanApiKey).toBe("sk-secret-123");
+  });
+
+  it("derives speech endpoints from nan.baseurl with trailing slash", () => {
+    const cfg = loadConfig({
+      AI_PROVIDER: "openai-compatible",
+      AI_BASE_URL: "https://api.nan.builders/v1/",
+      AI_API_KEY: "sk-secret-456",
+      AI_MODEL: "gemma4",
+    });
+    expect(cfg.nanBaseUrl).toBe("https://api.nan.builders");
+    expect(cfg.ttsEndpoint).toBe("https://api.nan.builders/v1/audio/speech");
+    expect(cfg.sttEndpoint).toBe("https://api.nan.builders/v1/audio/transcriptions");
+    expect(cfg.nanApiKey).toBe("sk-secret-456");
+  });
+
+  it("mock provider has no speech endpoints or key", () => {
+    const cfg = loadConfig({ AI_PROVIDER: "mock" });
+    expect(cfg.ttsEndpoint).toBeUndefined();
+    expect(cfg.sttEndpoint).toBeUndefined();
+    expect(cfg.nanApiKey).toBeUndefined();
+    expect(cfg.nanBaseUrl).toBeUndefined();
+  });
+
+  it("non-nan openai-compatible provider does not derive speech endpoints", () => {
+    const cfg = loadConfig({
+      AI_PROVIDER: "openai-compatible",
+      AI_BASE_URL: "https://other.provider.com/v1",
+      AI_API_KEY: "sk-other",
+      AI_MODEL: "other-model",
+    });
+    expect(cfg.ttsEndpoint).toBeUndefined();
+    expect(cfg.sttEndpoint).toBeUndefined();
+    expect(cfg.nanApiKey).toBeUndefined();
+    expect(cfg.nanBaseUrl).toBeUndefined();
+  });
+
+  it("explicit NAVIGANA_API_KEY overrides the reused key", () => {
+    const cfg = loadConfig({
+      AI_PROVIDER: "openai-compatible",
+      AI_BASE_URL: "https://api.nan.builders/v1",
+      AI_API_KEY: "sk-main-123",
+      AI_MODEL: "qwen3.6",
+      NAVIGANA_API_KEY: "sk-speech-only",
+    });
+    expect(cfg.nanApiKey).toBe("sk-speech-only");
+  });
+});

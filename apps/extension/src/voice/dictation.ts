@@ -9,6 +9,15 @@
  * clicks the button to grant microphone access.
  */
 
+import { getBackendUrl } from "../shared/backend-url";
+import { VOICE_TRANSCRIPT_TTL_MS as _TTL } from "../shared/voice-messages";
+
+/* ------------------------------------------------------------------ */
+/*  Constants                                                         */
+/* ------------------------------------------------------------------ */
+
+const RECORDING_LIMIT_MS = 30000;
+
 /* ------------------------------------------------------------------ */
 /*  State                                                             */
 /* ------------------------------------------------------------------ */
@@ -18,6 +27,7 @@ let recordingStream: MediaStream | null = null;
 let recordingChunks: Blob[] = [];
 let isRecording = false;
 let voiceTransitionInFlight = false;
+let recordingTimer: ReturnType<typeof setTimeout> | null = null;
 
 /* ------------------------------------------------------------------ */
 /*  DOM elements                                                      */
@@ -36,6 +46,13 @@ function setStatus(text: string): void {
 
 function stopAllTracks(stream: MediaStream | null): void {
   stream?.getTracks?.().forEach((track) => track.stop());
+}
+
+function clearRecordingTimer(): void {
+  if (recordingTimer) {
+    clearTimeout(recordingTimer);
+    recordingTimer = null;
+  }
 }
 
 const MIME_ORDER = [
@@ -57,23 +74,28 @@ function findSupportedMime(): string {
 
 /**
  * Deliver the transcript back to the side panel via chrome.runtime.sendMessage.
- * Falls back to chrome.storage.session with TTL and consume-once semantics.
+ * Falls back to chrome.storage.session only when sendMessage fails.
  */
 async function deliverTranscript(text: string, ts: number): Promise<void> {
   // Attempt 1: direct message to side panel
+  let sendMessageSucceeded = false;
   try {
     chrome.runtime.sendMessage({ type: "VOICE_TRANSCRIPT", text, ts }, () => {
-      // Success -- do nothing; the callback is called even on error
+      if (!chrome.runtime.lastError) {
+        sendMessageSucceeded = true;
+      }
     });
   } catch {
     // Silently proceed to fallback
   }
 
-  // Attempt 2: storage session fallback
-  const key = `_nav_voice_transcript_${ts}`;
-  await chrome.storage.session.set({
-    [key]: { text, ts, createdAt: Date.now() },
-  });
+  // Attempt 2: storage session fallback -- only when sendMessage failed
+  if (!sendMessageSucceeded) {
+    const key = `_nav_voice_transcript_${ts}`;
+    await chrome.storage.session.set({
+      [key]: { text, ts, createdAt: Date.now() },
+    });
+  }
 
   // Auto-close after delivery
   setTimeout(() => {
@@ -129,6 +151,14 @@ async function startRecordingFlow(): Promise<void> {
     return;
   }
 
+  // 30-second recording safety limit (per spec).
+  recordingTimer = setTimeout(async () => {
+    if (isRecording && mediaRecorder) {
+      setStatus("Limite de tiempo alcanzado. Transcribiendo...");
+      mediaRecorder.stop();
+    }
+  }, RECORDING_LIMIT_MS);
+
   setStatus("Escuchando... (espera a terminar y pulsa Detener)");
   micBtn.textContent = "Detener grabacion";
   micBtn.classList.add("recording");
@@ -147,6 +177,7 @@ async function startRecordingFlow(): Promise<void> {
     recordingStream = null;
     mediaRecorder = null;
     isRecording = false;
+    clearRecordingTimer();
 
     if (blob.size === 0) {
       setStatus("No se grabo audio. Cierra esta pestana e intentalo de nuevo.");
@@ -159,13 +190,14 @@ async function startRecordingFlow(): Promise<void> {
 
     setStatus("Transcribiendo...");
 
-    // Step 3: Send audio to NaN Whisper
+    // Step 3: Send audio to NaN Whisper (using same backend URL policy)
+    const baseUrl = await getBackendUrl().catch(() => "http://localhost:8787");
     const sttForm = new FormData();
     sttForm.append("file", blob, "recording.webm");
     sttForm.append("language", "es");
 
     try {
-      const res = await fetch("http://localhost:3456/v1/transcribe", {
+      const res = await fetch(`${baseUrl}/v1/transcribe`, {
         method: "POST",
         body: sttForm,
         signal: AbortSignal.timeout(65000),
@@ -213,6 +245,7 @@ async function startRecordingFlow(): Promise<void> {
 }
 
 async function stopRecordingFlow(): Promise<void> {
+  clearRecordingTimer();
   if (!isRecording || !mediaRecorder) return;
   mediaRecorder.stop();
   isRecording = false;
@@ -231,6 +264,7 @@ micBtn.addEventListener("click", () => {
 // Cleanup on page hide
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
+    clearRecordingTimer();
     stopAllTracks(recordingStream);
     recordingStream = null;
     mediaRecorder = null;
