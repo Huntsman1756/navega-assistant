@@ -74,6 +74,32 @@ TARGET_NOT_FOUND + PRECISE + rubric YES  → visual-highlight hypothesis
 design-system references, NOT a demonstrated result, until G1 evidence and a
 later comparison support it.
 
+### B1. Evaluation rule for the candidate comparison: objective behavior, not taste
+
+When the `Ahora:`/`Ruta:` (label style), `Paso X de N`, `Te faltan:` and
+spatial-text variants are eventually compared, the verdict comes from
+behavioral deltas — a design can be liked and still not help navigation.
+Stated preference (post-task questions) is secondary color only. All
+measures below come from fields that ALREADY exist in the protocol; no new
+telemetry is added:
+
+```text
+confusion_events              → per-task CONFUSION_POINTS / confusion_events
+wrong_actions                 → WRONG_ACTIONS
+human_help                    → HUMAN_HELP
+TARGET_NOT_FOUND              → PRIMARY_EVENT frequency
+perceived MULTI_ACTION        → MULTI_ACTION_GUIDANCE annotations
+time to first correct action  → derived from moderator timing + USER_ACTIONS
+                                ordering (recorded data, not new instrumentation)
+```
+
+Comparison discipline: matched task classes only, one variable at a time,
+and provider/model held constant (a style change bundled with a model change
+proves nothing). A variant is adopted only if it improves the behavioral set
+without degrading the others; "Paso 1 de 3 + ●/○ labels" is the preferred
+safe-HTML/CSS representation IF — and only if — the textual variants alone
+do not already win on these numbers.
+
 ## C. Reuse map (post-G1 adoption plan)
 
 ```text
