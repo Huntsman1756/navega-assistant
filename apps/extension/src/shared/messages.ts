@@ -17,6 +17,13 @@ export interface AssistMessage {
   context: PageContext;
   question: string;
   session: HelpSession;
+  /** Opaque operation id used only to cancel a stale side-panel request. */
+  requestId?: string;
+}
+
+export interface CancelAssistMessage {
+  type: "GWA_CANCEL_ASSIST";
+  requestId: string;
 }
 
 export type AssistResultMessage =

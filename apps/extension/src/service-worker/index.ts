@@ -7,7 +7,9 @@
  */
 import { requestAssist } from "./logic";
 import { OPERATOR_API_PORT } from "@guided-web/protocol";
-import type { AssistMessage, AssistResultMessage } from "../shared/messages";
+import type { AssistMessage, AssistResultMessage, CancelAssistMessage } from "../shared/messages";
+
+const activeAssistControllers = new Map<string, AbortController>();
 
 const DEFAULT_BACKEND_URL = `http://localhost:${OPERATOR_API_PORT}`;
 
@@ -26,8 +28,25 @@ async function getBackendUrl(): Promise<string> {
 }
 
 async function handleAssist(msg: AssistMessage): Promise<AssistResultMessage> {
-  const baseUrl = await getBackendUrl();
-  return requestAssist(baseUrl, msg.context, msg.question, msg.session);
+  const controller = new AbortController();
+  const requestId = msg.requestId;
+  if (requestId) activeAssistControllers.set(requestId, controller);
+  try {
+    const baseUrl = await getBackendUrl();
+    return await requestAssist(
+      baseUrl,
+      msg.context,
+      msg.question,
+      msg.session,
+      fetch,
+      undefined,
+      controller.signal,
+    );
+  } finally {
+    if (requestId && activeAssistControllers.get(requestId) === controller) {
+      activeAssistControllers.delete(requestId);
+    }
+  }
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -35,6 +54,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (msg?.type === "GWA_ASSIST" && _sender.url === chrome.runtime.getURL("sidepanel/index.html")) {
     void handleAssist(msg as AssistMessage).then((result) => sendResponse(result));
     return true;
+  }
+  const cancel = message as Partial<CancelAssistMessage> | undefined;
+  if (cancel?.type === "GWA_CANCEL_ASSIST" && _sender.url === chrome.runtime.getURL("sidepanel/index.html")) {
+    if (typeof cancel.requestId === "string") activeAssistControllers.get(cancel.requestId)?.abort();
+    sendResponse({ ok: true });
+    return false;
   }
   return undefined;
 });

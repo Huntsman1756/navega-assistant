@@ -9,6 +9,9 @@ reproduced or linked below.
   `@guided-web/protocol`.
 - **hono** — MIT License. Used by the backend HTTP layer.
 - **@hono/node-server** — MIT License. Node adapter for Hono.
+- **p-retry** — MIT License
+  (<https://github.com/sindresorhus/p-retry>, v8.0.1). Used by the backend for
+  the bounded provider retry policy.
 - **dom-accessibility-api** — MIT License
   (<https://github.com/eps1lon/dom-accessibility-api>, v0.7.1). Used for
   standards-based accessible-name/role/disabled/inaccessible computation in

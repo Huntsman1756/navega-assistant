@@ -17,14 +17,15 @@
     "@guided-web/protocol": "workspace:*",
     "@guided-web/provider": "workspace:*",
     "@guided-web/security-policy": "workspace:*",
+    "@hono/node-server": "^1.12.0",
     "hono": "^4.6.3",
-    "@hono/node-server": "^1.12.0"
+    "p-retry": "8.0.1"
   },
   "devDependencies": {
-    "typescript": "^5.5.4",
-    "vitest": "^3.2.6",
     "@types/node": "^22.5.0",
     "esbuild": "^0.25.0",
-    "tsx": "^4.19.0"
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4",
+    "vitest": "^3.2.6"
   }
 }

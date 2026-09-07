@@ -197,13 +197,13 @@ describe("POST /v1/assist", () => {
     }
   });
 
-  it("fires exactly the deadline timer when the provider exceeds the limit", async () => {
+  it("fires one deadline timer per bounded provider attempt", async () => {
     const tracked = trackDeadlineTimers(25);
     try {
       const timeoutApp = createApp(new HangingProvider(), "hanging", "h", { providerTimeoutMs: 25 });
       const r = await requestAssistOn(timeoutApp);
       expect(r.status).toBe(504);
-      expect(tracked.firedCount()).toBe(1);
+      expect(tracked.firedCount()).toBe(2);
     } finally {
       tracked.restore();
     }

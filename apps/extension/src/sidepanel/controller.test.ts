@@ -325,6 +325,34 @@ describe("reset / new help", () => {
     expect(saved[saved.length - 1]!.sessionId).toBe(fresh.sessionId);
     expect(calls.save).toBeGreaterThan(0);
   });
+
+  it("cancels the old logical operation so a late answer cannot overwrite reset state", async () => {
+    let resolveLate: (result: AssistResultMessage) => void = () => {};
+    const late = new Promise<AssistResultMessage>((resolve) => { resolveLate = resolve; });
+    const w = makeFacade();
+    w.facade.sendAssist = async () => {
+      w.calls.assist += 1;
+      return late;
+    };
+    const els = buildElements();
+    const c = createController(w.facade, els);
+    const oldOperation = c.askHelp();
+    await vi.waitFor(() => expect(w.calls.assist).toBe(1));
+
+    await c.reset();
+    resolveLate(okResult("stale answer"));
+    await oldOperation;
+    expect(c.currentSession().turns).toHaveLength(0);
+    expect(conversationText(els)).not.toContain("stale answer");
+    expect(els.status.textContent).toBe("");
+    expect(els.helpButton.disabled).toBe(false);
+
+    w.facade.sendAssist = async (req) => okResult(`fresh-${req.question}`);
+    els.input.value = "fresh question";
+    await c.askHelp();
+    expect(conversationText(els)).toContain("fresh-fresh question");
+    expect(c.currentSession().turns).toHaveLength(2);
+  });
 });
 
 describe("permission UX", () => {

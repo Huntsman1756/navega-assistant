@@ -9,7 +9,7 @@ export const TTS_TIMEOUT_MS = 30000;
 export const STT_TIMEOUT_MS = 60000;
 export const RECORDING_LIMIT_MS = 30000;
 export const KOKORO_VOICES = ["ef_dora", "em_alex"] as const;
-import type { AIProvider } from "@guided-web/provider";
+import { ProviderOutputError, type AIProvider } from "@guided-web/provider";
 import {
   AssistRequestSchema,
   P0AssistantDecisionSchema,
@@ -17,56 +17,38 @@ import {
 } from "@guided-web/protocol";
 import { checkInstructionSafety, checkConversationSimplicity } from "@guided-web/security-policy";
 import { buildSystemPrompt } from "./prompt";
-import { DEFAULT_PROVIDER_TIMEOUT_MS } from "./config";
+import {
+  DEFAULT_PROVIDER_TIMEOUT_MS,
+  DEFAULT_PROVIDER_TOTAL_BUDGET_MS,
+  MAX_PROVIDER_TOTAL_BUDGET_MS,
+  MAX_PROVIDER_ATTEMPTS,
+} from "./config";
+import {
+  assistWithProviderRetry,
+  isRetryableProviderError,
+  ProviderAttemptTimeoutError,
+  ProviderTotalTimeoutError,
+  RETRY_MAX_DELAY_MS,
+} from "./provider-retry";
 
 export { DEFAULT_PROVIDER_TIMEOUT_MS };
+export { DEFAULT_PROVIDER_TOTAL_BUDGET_MS, MAX_PROVIDER_ATTEMPTS };
 
-/**
- * Sentinel error raised when the provider exceeds its hard deadline. It is
- * classified specifically as `provider_timeout` (HTTP 504), never folded into
- * the generic `provider_unavailable`. No automatic retry.
- */
-export class ProviderTimeoutError extends Error {
-  constructor() {
-    super("provider_timeout");
-    this.name = "ProviderTimeoutError";
-  }
-}
-
-/**
- * Races a provider promise against a hard deadline. On expiry the controller
- * is aborted (so the provider's underlying fetch is cancelled and the socket
- * released) and the race rejects with `ProviderTimeoutError`. Even a provider
- * that ignores the AbortSignal cannot delay the HTTP response past the limit.
- * The timer is always cleared once the race settles (success OR failure).
- */
-function withProviderTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  controller: AbortController,
-): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      controller.abort();
-      reject(new ProviderTimeoutError());
-    }, ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (err) => {
-        clearTimeout(timer);
-        reject(err);
-      },
-    );
-  });
-}
+/** Backwards-compatible name for the old single-attempt timeout sentinel. */
+export { ProviderAttemptTimeoutError as ProviderTimeoutError } from "./provider-retry";
 
 export interface NanConfig {
   ttsEndpoint?: string;
   sttEndpoint?: string;
   apiKey?: string;
+}
+
+export interface AppOptions {
+  providerTimeoutMs?: number;
+  providerTotalTimeoutMs?: number;
+  nanConfig?: NanConfig;
+  /** Local validation hook; it receives no request or provider content. */
+  onProviderAttempt?: (attempt: number) => void;
 }
 
 type SpeechRequestResult =
@@ -105,10 +87,17 @@ export function createApp(
   provider: AIProvider,
   providerName: string,
   model?: string,
-  opts?: { providerTimeoutMs?: number; nanConfig?: NanConfig },
+  opts?: AppOptions,
 ): Hono {
   const app = new Hono();
   const providerTimeoutMs = opts?.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
+  const providerTotalTimeoutMs = opts?.providerTotalTimeoutMs
+    ?? (opts?.providerTimeoutMs === undefined
+      ? DEFAULT_PROVIDER_TOTAL_BUDGET_MS
+      : Math.min(
+        MAX_PROVIDER_TOTAL_BUDGET_MS,
+        providerTimeoutMs * MAX_PROVIDER_ATTEMPTS + RETRY_MAX_DELAY_MS,
+      ));
   const nanConfig = opts?.nanConfig;
 
   let activeCalls = 0;
@@ -129,32 +118,40 @@ export function createApp(
     const req = parsed.data;
 
     if (activeCalls >= MAX_PROVIDER_CALLS) return c.json({ error: "provider_busy" }, 429);
-    let response;
+    let response: Awaited<ReturnType<typeof assistWithProviderRetry>>;
     // Local-only perf instrumentation. Duration + outcome ONLY: never the
     // question, the page content, the session, URLs or any provider detail.
     const tProvider = performance.now();
-    const controller = new AbortController();
+    activeCalls += 1;
     try {
-      activeCalls += 1;
-      // Hold the slot until underlying work settles, even if it ignores abort.
-      const work = Promise.resolve().then(() => provider.assist(
-          {
-            mode: req.mode,
-            question: req.question,
-            session: req.session,
-            context: req.context,
-            systemPrompt: buildSystemPrompt(),
-          },
-          controller.signal,
-        )).finally(() => { activeCalls -= 1; });
-      response = await withProviderTimeout(
-        work,
-        providerTimeoutMs,
-        controller,
+      response = await assistWithProviderRetry(
+        provider,
+        {
+          mode: req.mode,
+          question: req.question,
+          session: req.session,
+          context: req.context,
+          systemPrompt: buildSystemPrompt(),
+        },
+        {
+          attemptTimeoutMs: providerTimeoutMs,
+          totalTimeoutMs: providerTotalTimeoutMs,
+          signal: c.req.raw.signal,
+          onAttempt: opts?.onProviderAttempt,
+        },
       );
     } catch (err) {
       const elapsedMs = Math.round(performance.now() - tProvider);
-      const timedOut = err instanceof ProviderTimeoutError || controller.signal.aborted;
+      activeCalls -= 1;
+      if (c.req.raw.signal.aborted) return new Response(null, { status: 499 });
+      if (err instanceof ProviderOutputError) {
+        console.log(`[perf] provider_ms=${elapsedMs} result=invalid_output`);
+        return c.json({ error: "invalid_model_output", reason: "provider_response" }, 502);
+      }
+      const timedOut =
+        err instanceof ProviderAttemptTimeoutError ||
+        err instanceof ProviderTotalTimeoutError ||
+        (elapsedMs >= providerTotalTimeoutMs && isRetryableProviderError(err));
       if (timedOut) {
         console.log(`[perf] provider_ms=${elapsedMs} result=timeout`);
         return c.json({ error: "provider_timeout" }, 504);
@@ -165,6 +162,7 @@ export function createApp(
       console.log(`[perf] provider_ms=${elapsedMs} result=error error_kind=${kind}`);
       return c.json({ error: "provider_unavailable" }, 502);
     }
+    activeCalls -= 1;
     console.log(`[perf] provider_ms=${Math.round(performance.now() - tProvider)} result=ok`);
 
     let rawDecision: unknown;

@@ -28,12 +28,14 @@ it("rejects server-side collection and string overflows before provider", async 
   for (const body of bodies) expect((await app.request("/v1/assist", { method: "POST", body: JSON.stringify(body) })).status).toBe(400);
   expect(assist).not.toHaveBeenCalled();
 });
-it("bounds underlying calls even when timed-out provider ignores abort", async () => {
+it("bounds each logical operation even when timed-out provider ignores abort", async () => {
   const assist = vi.fn(() => new Promise<typeof good>(() => {}));
   const app = createApp({ name: "mock", assist }, "mock", undefined, { providerTimeoutMs: 5 });
   for (let i = 0; i < 2; i++) expect((await app.request("/v1/assist", { method: "POST", body: JSON.stringify(request) })).status).toBe(504);
-  expect((await app.request("/v1/assist", { method: "POST", body: JSON.stringify(request) })).status).toBe(429);
-  expect(assist).toHaveBeenCalledTimes(2);
+  expect((await app.request("/v1/assist", { method: "POST", body: JSON.stringify(request) })).status).toBe(504);
+  // Each sequential operation gets at most the configured two attempts and
+  // the completed operations release their admission slot.
+  expect(assist).toHaveBeenCalledTimes(6);
 });
 it("listens on an explicit IPv4 loopback socket", async () => {
   const server = startLocalServer(createApp({ name: "mock", assist: async () => good }, "mock"), 0);

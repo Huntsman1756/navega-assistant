@@ -541,3 +541,76 @@ All code is original to Navega but follows the patterns documented above.
   diagram DSL; structure is expressible in plain text and later, if ever
   justified, in safe semantic HTML/CSS inside the side panel.
 - **Follow-up:** see `docs/POST-G1-BACKLOG.md`.
+
+==================================================
+ASSIST RELIABILITY — POST-G1 UPSTREAM REUSE DECISION
+==================================================
+
+Evaluated 2026-09-06 for the post-G1 candidate only. The frozen
+`v0.0.9-p0-g1-baseline` runtime and tag were not modified.
+
+### OpenAI official Node SDK — PATTERN_ONLY
+
+- **Repository:** <https://github.com/openai/openai-node>
+- **Inspected revision:** tag `v6.39.0`, commit
+  `200211197931763ed43b7ff41839b53e4dbfdf6e`; current default-branch commit
+  observed as `7b5d1209090f82f56b4971976147b5c2a859452e`.
+- **License:** Apache-2.0.
+- **Exact source inspected:** `src/client.ts` and the configuration docs.
+  The client exposes `baseURL`, per-request `timeout`, and `maxRetries`; its
+  retry policy covers connection failures, 408, 409, 429 and HTTP 5xx.
+- **Decision:** PATTERN_ONLY. Navega keeps its small native fetch adapter so the
+  generic OpenAI-compatible contract, response parsing and provider-neutral
+  error boundary remain unchanged. The SDK's own retry authority would add a
+  second timeout/retry policy and a disproportionate migration surface.
+
+### p-retry — REUSE
+
+- **Repository:** <https://github.com/sindresorhus/p-retry>
+- **Inspected revision:** tag `v8.0.1`, commit
+  `7c95e3b751558c5f434b08f928ef092ccd5ed0ab` (Node `>=22`).
+- **License:** MIT.
+- **Exact source inspected:** `index.js` and `index.d.ts`. The maintained
+  implementation provides bounded retries, exponential delay, optional jitter,
+  `shouldRetry`, `maxRetryTime` and `AbortSignal` handling.
+- **Decision:** REUSE. `p-retry@8.0.1` is a direct API dependency. Navega's
+  adapter in `apps/api/src/provider-retry.ts` supplies the product-specific
+  policy: exactly two attempts, explicit retryable status/error classes,
+  bounded `Retry-After`, fresh per-attempt controllers and a 17-second total
+  budget. No upstream source was copied.
+
+### ai-retry — PATTERN_ONLY
+
+- **Repository:** <https://github.com/zirkelc/ai-retry>
+- **Inspected revision:** `v2.4.0`, commit
+  `bb477f08bc1d352bf4470ef66e6650689727623f`.
+- **License:** MIT; the package is coupled to the Vercel AI SDK peer stack.
+- **Exact source inspected:** retry-timeout and retryable-language-model
+  helpers. The useful concept is a fresh timeout per attempt plus a total
+  retry deadline.
+- **Decision:** PATTERN_ONLY. Navega does not migrate to the Vercel AI SDK just
+  to obtain retry handling.
+
+### LiteLLM router resilience — PATTERN_ONLY
+
+- **Repository:** <https://github.com/BerriAI/litellm>
+- **Inspected revision:** current default-branch commit observed as
+  `eeb7732fc11fd47762ca84cc3fb7cc74235d7097` (release `1.101.0`).
+- **License:** MIT for repository content outside the separately licensed
+  enterprise directory.
+- **Exact source/docs inspected:** router retry-policy helpers and the
+  reliable-completions/proxy reliability documentation. The relevant patterns
+  are bounded retries, fallbacks, cooldowns and total request limits.
+- **Decision:** PATTERN_ONLY. NaN already exposes the OpenAI-compatible API;
+  Navega does not deploy a second LiteLLM proxy or add an unbounded fallback
+  layer.
+
+No undocumented qwen3.6 reasoning-control parameter is sent. The documented
+`reasoning_config: {}` shape was tested as a bounded experiment, but rejected
+for shipment: in the six-call test it did not provide a reproducible advantage,
+and the subsequent 40-call candidate run was materially worse. Generic
+OpenAI-compatible providers therefore receive no provider-specific reasoning
+field. NaN's documented qwen3.6 sampling values (`temperature=0.6`,
+`top_p=0.95`) were also tested in a same-fixture A/B and rejected: guidance
+correctness was lower and one final timeout remained. Reliability remains
+bounded independently through the retry policy and output budget.

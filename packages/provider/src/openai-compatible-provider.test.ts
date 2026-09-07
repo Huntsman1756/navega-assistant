@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { OpenAICompatibleProvider } from "./openai-compatible-provider";
+import { DEFAULT_MAX_OUTPUT_TOKENS, OpenAICompatibleProvider } from "./openai-compatible-provider";
+import { ProviderConnectionError, ProviderHttpError, ProviderOutputError } from "./errors";
 import type { AssistModelRequest } from "./types";
 
 const request: AssistModelRequest = {
@@ -42,10 +43,12 @@ afterEach(() => {
 describe("OpenAICompatibleProvider AbortSignal support", () => {
   it("passes the caller's AbortSignal straight to fetch", async () => {
     let seenSignal: AbortSignal | undefined | null = null;
+    let seenBody: Record<string, unknown> | undefined;
     vi.stubGlobal(
       "fetch",
       async (_url: string, init?: RequestInit) => {
         seenSignal = init?.signal;
+        seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
         return new Response(
           JSON.stringify({ choices: [{ message: { content: '{"kind":"explain","message":"ok"}' } }] }),
           { status: 200, headers: { "Content-Type": "application/json" } },
@@ -57,6 +60,8 @@ describe("OpenAICompatibleProvider AbortSignal support", () => {
     const res = await makeProvider().assist(request, controller.signal);
     expect(res.raw).toContain("explain");
     expect(seenSignal).toBe(controller.signal);
+    expect(seenBody?.max_tokens).toBe(DEFAULT_MAX_OUTPUT_TOKENS);
+    expect(seenBody?.max_tokens).toBeLessThanOrEqual(4096);
   });
 
   it("an aborted fetch rejects, and the caller can classify it as provider_timeout", async () => {
@@ -92,7 +97,28 @@ describe("OpenAICompatibleProvider AbortSignal support", () => {
     });
     const controller = new AbortController();
     const err = await makeProvider().assist(request, controller.signal).catch((e: unknown) => e);
-    expect((err as Error).name).toBe("TypeError");
+    expect(err).toBeInstanceOf(ProviderConnectionError);
     expect(controller.signal.aborted).toBe(false);
   });
+
+  it("exposes only retry metadata for retryable HTTP failures", async () => {
+    vi.stubGlobal("fetch", async () => new Response("private upstream details", {
+      status: 429,
+      headers: { "Retry-After": "0.2" },
+    }));
+    const err = await makeProvider().assist(request).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderHttpError);
+    expect(err).toMatchObject({ status: 429, retryAfterMs: 200 });
+    expect((err as Error).message).not.toContain("private upstream details");
+  });
+
+  it("classifies a successful upstream response without content as model output", async () => {
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ choices: [{ message: { reasoning_content: "thinking" } }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    const err = await makeProvider().assist(request).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderOutputError);
+  });
+
 });

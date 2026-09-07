@@ -2,19 +2,23 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   loadConfig,
   parseProviderTimeoutMs,
+  parseProviderTotalBudgetMs,
   DEFAULT_PROVIDER_TIMEOUT_MS,
   MIN_PROVIDER_TIMEOUT_MS,
   MAX_PROVIDER_TIMEOUT_MS,
+  DEFAULT_PROVIDER_TOTAL_BUDGET_MS,
+  MIN_PROVIDER_TOTAL_BUDGET_MS,
+  MAX_PROVIDER_TOTAL_BUDGET_MS,
 } from "./config";
 
 describe("parseProviderTimeoutMs (AI_PROVIDER_TIMEOUT_MS)", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("defaults to 8000 when unset or empty", () => {
-    expect(parseProviderTimeoutMs(undefined)).toBe(8000);
+  it("defaults to 15000 when unset or empty", () => {
+    expect(parseProviderTimeoutMs(undefined)).toBe(15000);
     expect(parseProviderTimeoutMs("")).toBe(DEFAULT_PROVIDER_TIMEOUT_MS);
     expect(parseProviderTimeoutMs("   ")).toBe(DEFAULT_PROVIDER_TIMEOUT_MS);
-    expect(DEFAULT_PROVIDER_TIMEOUT_MS).toBe(8000);
+    expect(DEFAULT_PROVIDER_TIMEOUT_MS).toBe(15000);
   });
 
   it("parses a valid configured value", () => {
@@ -37,10 +41,32 @@ describe("parseProviderTimeoutMs (AI_PROVIDER_TIMEOUT_MS)", () => {
   });
 });
 
+describe("parseProviderTotalBudgetMs (AI_PROVIDER_TOTAL_TIMEOUT_MS)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("defaults to the bounded complete-operation budget", () => {
+    expect(parseProviderTotalBudgetMs(undefined)).toBe(DEFAULT_PROVIDER_TOTAL_BUDGET_MS);
+    expect(parseProviderTotalBudgetMs("   ")).toBe(DEFAULT_PROVIDER_TOTAL_BUDGET_MS);
+    expect(DEFAULT_PROVIDER_TOTAL_BUDGET_MS).toBe(18000);
+  });
+
+  it("accepts only integer values within the configured total-budget range", () => {
+    expect(parseProviderTotalBudgetMs(String(MIN_PROVIDER_TOTAL_BUDGET_MS))).toBe(MIN_PROVIDER_TOTAL_BUDGET_MS);
+    expect(parseProviderTotalBudgetMs("15000")).toBe(15000);
+    expect(parseProviderTotalBudgetMs(String(MAX_PROVIDER_TOTAL_BUDGET_MS))).toBe(MAX_PROVIDER_TOTAL_BUDGET_MS);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    for (const value of ["0", "999", "18001", "800.5", "Infinity", "NaN"]) {
+      expect(parseProviderTotalBudgetMs(value)).toBe(DEFAULT_PROVIDER_TOTAL_BUDGET_MS);
+    }
+    expect(warn).toHaveBeenCalled();
+  });
+});
+
 describe("loadConfig provider timeout wiring", () => {
   it("passes the configured timeout through to the app config", () => {
     const cfg = loadConfig({ AI_PROVIDER: "mock", AI_PROVIDER_TIMEOUT_MS: "9000" });
     expect(cfg.providerTimeoutMs).toBe(9000);
+    expect(cfg.providerTotalTimeoutMs).toBe(DEFAULT_PROVIDER_TOTAL_BUDGET_MS);
   });
 
   it("uses the default timeout when the env value is missing or invalid", () => {
@@ -50,6 +76,14 @@ describe("loadConfig provider timeout wiring", () => {
       DEFAULT_PROVIDER_TIMEOUT_MS,
     );
     warn.mockRestore();
+  });
+
+  it("passes a configured total assist budget through to the app config", () => {
+    const cfg = loadConfig({
+      AI_PROVIDER: "mock",
+      AI_PROVIDER_TOTAL_TIMEOUT_MS: "15000",
+    });
+    expect(cfg.providerTotalTimeoutMs).toBe(15000);
   });
 });
 

@@ -86,8 +86,8 @@ describe("service worker assist logic (stateless, P0-14)", () => {
 describe("backend fail-safe deadline (browser-side)", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("the browser deadline is strictly longer than the 8000 ms provider deadline", () => {
-    expect(BACKEND_REQUEST_TIMEOUT_MS).toBeGreaterThan(8000);
+  it("the browser deadline is strictly longer than the complete backend budget", () => {
+    expect(BACKEND_REQUEST_TIMEOUT_MS).toBeGreaterThan(18000);
   });
 
   it("passes an AbortSignal to the backend fetch", async () => {
@@ -174,6 +174,49 @@ describe("backend fail-safe deadline (browser-side)", () => {
     );
     await new Promise((r) => setTimeout(r, 10));
     expect(res).toEqual({ type: "GWA_ASSIST_RESULT", ok: false, error: "backend_timeout" });
+  });
+
+  it("bounds a response body that never settles", async () => {
+    const fetchImpl = async () => ({
+      ok: true,
+      status: 200,
+      json: () => new Promise<unknown>(() => {}),
+    } as Response);
+    const res = await requestAssist(
+      `http://localhost:${OPERATOR_API_PORT}`,
+      context("body"),
+      "q",
+      emptySession(),
+      fetchImpl,
+      20,
+    );
+    expect(res).toEqual({ type: "GWA_ASSIST_RESULT", ok: false, error: "backend_timeout" });
+  });
+
+  it("cancels the logical request and cannot deliver a late answer", async () => {
+    const controller = new AbortController();
+    let lateResolve: ((response: Response) => void) | undefined;
+    const fetchImpl = async () => new Promise<Response>((resolve) => {
+      lateResolve = resolve;
+    });
+    const pending = requestAssist(
+      `http://localhost:${OPERATOR_API_PORT}`,
+      context("cancel"),
+      "q",
+      emptySession(),
+      fetchImpl,
+      1000,
+      controller.signal,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    controller.abort();
+    await expect(pending).resolves.toEqual({ type: "GWA_ASSIST_RESULT", ok: false, error: "cancelled" });
+    lateResolve?.(new Response(JSON.stringify({ protocolVersion: 3, mode: "DOM_ONLY", decision: { kind: "explain", message: "late" } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(controller.signal.aborted).toBe(true);
   });
 
   it("[perf] backend_request_ms logs never contain question/session/page content", async () => {

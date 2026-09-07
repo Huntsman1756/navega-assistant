@@ -4,37 +4,46 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] — pre-G1 latency / fail-fast closure (engineering candidate)
+## [Unreleased] — post-G1 reliability closure (engineering candidate)
 
-Not a feature iteration. No model change, no context-budget change, no prompt
-change, no streaming, no automatic retry, no telemetry.
+No model replacement, undocumented reasoning flag, context-budget change or
+telemetry was added. The frozen G1 runtime remains unchanged.
 
 ### Added
-- **Provider hard deadline.** Every provider call runs under a configurable
-  `AbortController` deadline (`AI_PROVIDER_TIMEOUT_MS`, default **8000 ms**,
-  validated to an integer within [1000, 30000], falling back to the default on
-  any invalid value). The signal reaches the `openai-compatible` `fetch`, so a
-  hung request is actually cancelled.
-- **Distinct `provider_timeout` error** (HTTP 504), never folded into
-  `provider_unavailable`; raw provider errors are never forwarded to the
-  extension.
-- **Extension fail-safe deadline** (`BACKEND_REQUEST_TIMEOUT_MS = 12000`),
-  intentionally longer than the provider deadline so the backend normally
-  answers `provider_timeout` first. Browser-side expiry surfaces as
-  `backend_timeout`, still distinct from `network`.
-- **Local-only performance instrumentation**: `[perf] capture_ms`,
-  `[perf] assist_request_ms`, `[perf] backend_request_ms`,
-  `[perf] provider_ms result=ok|timeout|error`, `[perf] total_ms` — durations
-  only, to the local console; no question/page/session/URL/identifier content;
-  not telemetry, never persisted, never sent.
+- **Bounded provider retry.** `p-retry@8.0.1` drives exactly two maximum
+  provider attempts. Only connection failures, 408, 409, 429, 5xx and an
+  attempt timeout are retryable. Retry-After is honored only inside the total
+  operation budget.
+- **Separate total provider budget.** Each attempt has a measured 15000 ms
+  candidate deadline; the default complete-assist budget is 18000 ms and is authoritative
+  over backoff and retries. Every attempt receives a fresh AbortController.
+- **Bounded provider output.** OpenAI-compatible requests set
+  `max_tokens: 4096`. Controlled NaN/qwen3.6 shape checks showed that smaller
+  budgets could end with `finish_reason=length` before final assistant content;
+  4096 was the smallest tested bound with complete structured output.
+- **Model-specific controls evaluated and rejected.** NaN documents
+  `reasoning_config: {}` and qwen3.6 sampling values, but neither A/B was
+  reproducibly better, so no provider-specific reasoning or sampling field
+  ships.
+- **Cancellation-safe extension flow.** The extension fail-safe is 20000 ms,
+  longer than the default backend total budget. Reset/cancel invalidates the
+  old operation, cancels its backend request and prevents late answers from
+  changing the current session.
 
 ### Changed
-- **Participant-visible errors are friendly Spanish messages**, never technical
-  codes or raw `Error` text (codes remain in the local console only).
-- A failed/aborted turn keeps the displayed conversation intact, appends no fake
-  assistant answer, produces no duplicate user turn, and re-enables the
-  controls for a manual retry only. An aborted request's late response can no
-  longer reach the UI (the fetch is cancelled at the deadline).
+- Successful transient recovery is rendered as a normal answer. A final
+  failure keeps the Spanish error mapping and exact question for manual retry;
+  it never shows attempt count, HTTP status, provider name or retry machinery.
+- Local `[perf]` logs remain duration/outcome only and are never persisted or
+  sent. See `docs/validation/RELIABILITY-504.md` for the pre-change baseline
+  and candidate-burn fields.
+
+### Validation status
+- Deterministic engineering gates pass, but the required live qwen3.6 burn
+  still observed 2 final provider timeouts in 40 calls. The reliability release
+  gate therefore remains **FAIL**; this is not a project-closed release.
+- The real-Chrome/real-NaN voice smoke was not observed in this run. Both live
+  voice gates remain **PENDING**; the engineering voice gates remain PASS.
 
 ## [0.0.7-p0-g1-baseline] - 2026-09-04
 

@@ -5,6 +5,7 @@ import { createApp } from "./routes";
 const config = loadConfig();
 const app = createApp(config.provider, config.providerName, config.model, {
   providerTimeoutMs: config.providerTimeoutMs,
+  providerTotalTimeoutMs: config.providerTotalTimeoutMs,
   nanConfig: {
     ttsEndpoint: config.ttsEndpoint,
     sttEndpoint: config.sttEndpoint,

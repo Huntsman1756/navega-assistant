@@ -89,7 +89,7 @@ export interface ChromeFacade {
     context: PageContext;
     question: string;
     session: HelpSession;
-  }): Promise<AssistResultMessage>;
+  }, signal?: AbortSignal): Promise<AssistResultMessage>;
   hasPermission(pattern: string): Promise<boolean>;
   requestPermission(pattern: string): Promise<boolean>;
   loadSession(): Promise<HelpSession | null>;
@@ -126,12 +126,16 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
   /** Awaiting permission for a specific origin; the retry context. */
   let pendingHelpRequest: PendingHelpRequest | null = null;
   let inFlight = false;
+  let operationSerial = 0;
+  let activeRequestController: AbortController | null = null;
   /** Voice controller handle, set by script.ts after initVoiceController. */
   let voiceHandle: VoiceHandle | null = null;
 
-  async function ensureSession(): Promise<HelpSession> {
+  async function ensureSession(operationId?: number): Promise<HelpSession | null> {
+    if (operationId !== undefined && operationId !== operationSerial) return null;
     if (session) return session;
     const loaded = HelpSessionSchema.safeParse(await facade.loadSession().catch(() => null));
+    if (operationId !== undefined && operationId !== operationSerial) return null;
     session = loaded.success ? loaded.data : resetSession();
     return session;
   }
@@ -226,6 +230,9 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
 
   async function runHelp(question: string): Promise<void> {
     if (inFlight) return;
+    const operationId = ++operationSerial;
+    const requestController = new AbortController();
+    activeRequestController = requestController;
     inFlight = true;
     els.helpButton.disabled = true;
     els.newHelpButton.disabled = true;
@@ -242,8 +249,10 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
     let activeTab: { id: number; url: string } | null = null;
 
     try {
-      const s = await ensureSession();
+      const s = await ensureSession(operationId);
+      if (!s || operationId !== operationSerial) return;
       const tab = await facade.getActiveTab();
+      if (operationId !== operationSerial) return;
       if (!tab?.id) {
         setStatus("No encontré la pestaña activa.");
         return;
@@ -253,6 +262,7 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
       // T_capture: start of current-page capture → PageContext ready.
       const tCapture = perfNow();
       const context = await captureWithPermission(activeTab.id, activeTab.url);
+      if (operationId !== operationSerial) return;
       logPerf("capture_ms", tCapture);
 
       const outbound = sanitizeOutbound(context, question, setCurrentOrigin(s, pageContextOrigin(context)));
@@ -268,19 +278,24 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
         context: outbound.context,
         question,
         session: sWithOrigin,
-      });
+      }, requestController.signal);
+      if (operationId !== operationSerial) return;
       logPerf("assist_request_ms", tAssist);
 
       renderResult(sanitizeCapturedData(context, result), question);
     } catch (err) {
+      if (operationId !== operationSerial) return;
       handleError(err, question, activeTab);
     } finally {
-      logPerf("total_ms", tTotal);
-      inFlight = false;
-      if (pendingUserText) els.input.value = pendingUserText;
-      els.input.disabled = false;
-      els.helpButton.disabled = false;
-      els.newHelpButton.disabled = false;
+      if (operationId === operationSerial) {
+        logPerf("total_ms", tTotal);
+        inFlight = false;
+        activeRequestController = null;
+        if (pendingUserText) els.input.value = pendingUserText;
+        els.input.disabled = false;
+        els.helpButton.disabled = false;
+        els.newHelpButton.disabled = false;
+      }
     }
   }
 
@@ -380,12 +395,18 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
   }
 
   async function reset(): Promise<void> {
-    if (inFlight) return;
+    operationSerial += 1;
+    activeRequestController?.abort();
+    activeRequestController = null;
+    inFlight = false;
     hidePermission();
     pendingUserText = null;
     clearPending();
     session = resetSession();
     els.input.value = "";
+    els.input.disabled = false;
+    els.helpButton.disabled = false;
+    els.newHelpButton.disabled = false;
     setStatus("");
     await facade.saveSession(session);
     renderConversation();
@@ -407,9 +428,10 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
   }
 
   function init(): void {
+    const operationId = operationSerial;
     void (async () => {
-      await ensureSession();
-      renderConversation();
+      const loaded = await ensureSession(operationId);
+      if (loaded && operationId === operationSerial) renderConversation();
     })();
   }
 
@@ -504,8 +526,19 @@ export function createChromeFacade(cc: typeof chrome): ChromeFacade {
           return () => cc.runtime.onMessage.removeListener(handler);
         },
       }),
-    sendAssist: (req) =>
-      cc.runtime.sendMessage({ type: "GWA_ASSIST", ...req }) as Promise<AssistResultMessage>,
+    sendAssist: async (req, signal) => {
+      if (signal?.aborted) return { type: "GWA_ASSIST_RESULT", ok: false, error: "cancelled" };
+      const requestId = `assist-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const cancel = () => {
+        void Promise.resolve(cc.runtime.sendMessage({ type: "GWA_CANCEL_ASSIST", requestId })).catch(() => undefined);
+      };
+      signal?.addEventListener("abort", cancel, { once: true });
+      try {
+        return await cc.runtime.sendMessage({ type: "GWA_ASSIST", ...req, requestId }) as AssistResultMessage;
+      } finally {
+        signal?.removeEventListener("abort", cancel);
+      }
+    },
     hasPermission: (pattern: string) =>
       cc.permissions.contains({ origins: [pattern] }) as unknown as Promise<boolean>,
     requestPermission: (pattern: string) =>

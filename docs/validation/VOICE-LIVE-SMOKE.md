@@ -148,3 +148,14 @@ VOICE_02_LIVE = PASS | FAIL
 Any unchecked or unobserved box keeps that gate at PENDING. A FAIL records the
 observed behavior factually (what was pressed, what happened); it does not
 authorize runtime changes during a frozen study window.
+
+## 5. Current run record
+
+On 2026-09-07 this closure run did not have an observed real-Chrome,
+real-NaN operator session. No live voice result is inferred from automated
+tests, so the statuses remain:
+
+```text
+VOICE_01_LIVE = PENDING
+VOICE_02_LIVE = PENDING
+```

@@ -137,30 +137,36 @@ Real-provider measurements (qwen3.6 via an OpenAI-compatible endpoint, 20
 samples): p50 ~0.7 s, p95 ~1.7 s, with a heavy-tail outlier (~11.5 s). The
 median is healthy; the risk is an unbounded outlier leaving the user waiting
 forever at “Preguntando al asistente…”. The closure is **deadlines + honest
-errors**, NOT model/context changes, NOT retries, NOT streaming.
+errors**, NOT model/context changes or undocumented model flags. The candidate
+uses one bounded retry for transient provider failures; it does not stream.
 
 ### Provider deadline (backend)
 
-- Every provider call runs under a hard `AbortController` deadline, applied by
-  the backend and passed to `provider.assist(request, signal)`. The
+- Every provider attempt runs under a fresh hard `AbortController` deadline,
+  applied by the backend and passed to `provider.assist(request, signal)`. The
   `openai-compatible` provider forwards the signal to `fetch`, so a hung
   request is actually cancelled (socket released).
-- Configured via `AI_PROVIDER_TIMEOUT_MS`, **default 8000 ms**, defensively
+- Configured via `AI_PROVIDER_TIMEOUT_MS`, **default 15000 ms**, defensively
   validated: it must be an integer between 1000 and 30000; anything else logs a
-  warning and falls back to 8000 (a bad `.env` can never disable fail-fast).
-- On expiry the route answers **HTTP 504 `{ "error": "provider_timeout" }`** —
-  distinct from `provider_unavailable` (502) and `invalid_model_output` (502).
-  The deadline timer is always cleared after success or failure.
-- **No automatic retry.** A timed-out request is final; the user may retry
-  manually. **No streaming** (not justified at p50 < 1.2 s).
+  warning and falls back to 15000 (a bad `.env` can never disable fail-fast).
+- The complete operation has a separate `AI_PROVIDER_TOTAL_TIMEOUT_MS` budget
+  (default 18000 ms, maximum 18000 ms) and at most `MAX_PROVIDER_ATTEMPTS = 2`.
+  The total budget is authoritative over per-attempt deadlines and backoff.
+- Retry is limited to connection failures, 408, 409, 429, 5xx and an attempt
+  timeout. Deterministic client, policy and structured-output errors are not
+  retried. A successful retry is a normal answer; two failures produce
+  **HTTP 504 `{ "error": "provider_timeout" }`** when the failure is timeout-like,
+  otherwise `provider_unavailable` (502). The deadline timers are cleared.
+- The provider request includes `max_tokens = 4096`, which bounds output cost
+  without changing the structured response contract.
 
 ### Extension fail-safe deadline (browser side)
 
 - The service worker wraps the extension → localhost request with its own
-  deadline: `BACKEND_REQUEST_TIMEOUT_MS = 12000`. It is deliberately LONGER
-  than the provider deadline (8000) so the backend almost always wins the race
-  and returns a precise `provider_timeout`; the browser deadline only fires if
-  the backend itself is hung or unreachable.
+  deadline: `BACKEND_REQUEST_TIMEOUT_MS = 20000`. It is deliberately LONGER
+  than the complete provider budget (18000) so the backend normally wins the
+  race and returns a precise result; the browser deadline only fires if the
+  backend itself is hung or unreachable.
 - If OUR deadline fires first → `backend_timeout`. A connection failure remains
   `network`. Both are distinguishable from a backend-returned
   `provider_timeout`.
@@ -175,7 +181,7 @@ errors**, NOT model/context changes, NOT retries, NOT streaming.
 | `provider_timeout`    | backend             | 504  | Provider exceeded its hard deadline    |
 | `provider_unavailable`| backend             | 502  | Provider call failed (raw error NEVER forwarded) |
 | `invalid_model_output`| backend             | 502  | Output was not JSON / failed the schema |
-| `backend_timeout`     | extension (SW)      | —    | Local backend did not answer within 12 s |
+| `backend_timeout`     | extension (SW)      | —    | Local backend did not answer within 20 s |
 | `network`             | extension (SW)      | —    | Local backend unreachable              |
 | `backend_error`       | extension (SW)      | —    | Unexpected backend shape/status        |
 
