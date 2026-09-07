@@ -149,6 +149,13 @@ try {
     current.invalidA = current.observations.filter((o) => o.attempt === 1 && (o.retryReason === "invalid_model_output" || o.retryReason === "validation_failed")).length;
     current.invalidB = current.observations.filter((o) => o.attempt === 2 && (o.retryReason === "invalid_model_output" || o.retryReason === "validation_failed")).length;
     current.recovered = current.invalidA > 0 && current.invalidB === 0 && !current.timeout && !current.invalidOutput;
+    if (current.invalidA > 0 && current.invalidOutput) {
+      const bL = current.observations.some((o) => o.attempt === 2);
+      const reason = bL
+        ? "invalid_A+invalid_B: B launched but also invalid"
+        : "invalid_A_no_B: B not launched (budget/hedge pending)";
+      console.log(`[burn] row ${i}: INVALID ${reason} obs=${current.observations.length} winner=${current.winner}`);
+    }
     rows.push(current);
     current = undefined;
     if (i < 99) await pause(2000);
