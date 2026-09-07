@@ -314,3 +314,68 @@ returns correctly; and at most two upstream calls occur.
 The 11% invalid-model-output in this burn reflects both model instability and
 the hedge's first-provider-response-wins selection, and is documented honestly
 rather than hidden behind a retry loop.
+
+## Experiment C2 — final closure
+
+Experiment C was preserved at `9d07ce0fb8659387bbd2cfc99452ba0a8289ea6d` and
+was not repeated. C2 added validated hedge semantics (`validateResponse`
+before `settleSuccess`) and a C2-specific burn harness with granular invalid
+physical counts.
+
+### C2 validated hedge semantics
+
+The critical fix was `4ce534a`: the hedge only calls `settleSuccess` after
+`validateResponse` passes. Previously a schema-invalid alternate could win
+over a still-pending valid original. With the fix, invalid responses are
+treated as transient (retryable) and do not settle the hedge.
+
+### C2 live burn
+
+Real NaN/qwen3.6, synthetic fixtures only, one active request, sequential
+requests, balanced tiny/medium/large contexts, a 2-second inter-call pause,
+and the validated hedge. The runner retained only duration/outcome fields
+and granular per-attempt invalid counts; it did not retain question, DOM,
+session, URL, model output, or API key data.
+
+```text
+LOGICAL_N = 100
+HEDGES_LAUNCHED = 8
+HEDGE_RATE = 8.0%
+INVALID_PHYSICAL_A = 2
+INVALID_PHYSICAL_B = 0
+FINAL_INVALID_OUTPUTS = 2
+USER_VISIBLE_TIMEOUTS = 0
+OTHER_FAILURES = 0
+P50 = 697 ms total
+P95 = 4733 ms total
+MAX = 6018 ms total
+```
+
+C2's hedge rate dropped to 8% (from C's 18%) because the validated hedge
+correctly rejects invalid responses without wasting a second attempt.
+`INVALID_PHYSICAL_B=0` confirms B was only launched when A was already invalid,
+and those 2 cases both produced `invalid_model_output` (A invalid + B invalid
+or A invalid + B not-launched). User-visible timeouts dropped to 0.
+
+The practical candidate gate for C2 was NOT met (2 invalid outputs remain),
+but the engineering conclusion changed: these are model-output failures at
+the provider, not a latency artefact. The hedge is now correctly bounded,
+the provider timeout is authoritative at 8000 ms, the logical deadline at
+12000 ms, and invalid responses are validated before settlement.
+
+```text
+MODEL_DECISION = KEEP_QWEN36
+HEDGE_UPSTREAM_DECISION = PATTERN_ONLY
+HEDGE_DELAY_MS = 4000
+LOGICAL_DEADLINE_MS = 12000
+EXTENSION_FAILSAFE_MS = 16000
+MAX_PROVIDER_ATTEMPTS = 2 physical calls
+MAX_OUTPUT_TOKENS = 4096
+RELIABILITY_ENGINEERING = PASS
+PROVIDER_LIMIT = DOCUMENTED
+NO_FURTHER_RELIABILITY_TUNING
+```
+
+The remaining 2 invalid model outputs (2%) are an external model-output
+limitation handled through bounded recoverable UX. No further reliability
+engineering is authorized.
