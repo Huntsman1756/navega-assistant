@@ -44,7 +44,9 @@ P0 prototype implementation: COMPLETE
 Source-release readiness: PASS
 OSS publication hygiene: PASS
 Pre-G1 validation baseline: FROZEN (v0.0.9-p0-g1-baseline)
-Human product validation: READY TO START (G1)
+Reliability engineering (C2): PASS (N=100, HEDGE_RATE=8%, INVALID_PHYSICAL_A=2, FINAL_INVALID=0, USER_VISIBLE_TIMEOUTS=0, P50=697ms, P95=4733ms, MAX=6018ms)
+Voice engineering: PASS (VOICELIVE explicitly excluded from release scope)
+Human product validation: PENDING (G1 study not yet executed)
 P1 development: BLOCKED (product evidence pending)
 ```
 

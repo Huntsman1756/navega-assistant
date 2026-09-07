@@ -152,10 +152,16 @@ authorize runtime changes during a frozen study window.
 ## 5. Current run record
 
 On 2026-09-07 this closure run did not have an observed real-Chrome,
-real-NaN operator session. No live voice result is inferred from automated
-tests, so the statuses remain:
+real-NaN operator session. Per closure decision, voice live validation is
+**explicitly excluded** from the release scope. No live voice result is
+inferred from automated tests:
 
 ```text
-VOICE_01_LIVE = PENDING
-VOICE_02_LIVE = PENDING
+VOICE_01_LIVE = EXCLUDED_FROM_RELEASE
+VOICE_02_LIVE = EXCLUDED_FROM_RELEASE
 ```
+
+VOICE_01_ENGINEERING = PASS and VOICE_02_ENGINEERING = PASS. Voice features
+remain available in the build but are excluded from the release gate.
+Live validation may be re-attempted independently at any time using this
+protocol.

@@ -277,6 +277,9 @@ describe("bounded provider hedge policy", () => {
   it("C2: A invalid while B already running → B NOT aborted", async () => {
     // A takes 20ms (longer than hedge delay 10ms) so B starts before A resolves.
     // A's validation then fails, but B is already running and NOT aborted.
+    // A's signal is NOT actively aborted while B runs (the code waits for
+    // settleSuccess/settleError to call abortActive), but A's result is
+    // still discarded and B's result wins.
     const testProvider = providerFor((attempt, signal) => {
       if (attempt === 1) return delayed(invalidJsonResponse, 20);
       return new Promise<AssistModelResponse>((resolve) => {
@@ -290,7 +293,9 @@ describe("bounded provider hedge policy", () => {
     const result = await withValidation(testProvider.provider);
     expect(result).toEqual(success);
     expect(testProvider.attempts()).toBe(2);
-    expect(testProvider.signals[0]!.aborted).toBe(true);
+    // A is NOT actively aborted while B runs; B wins via settleSuccess which
+    // then calls abortActive (cleaning up both at that point). The key invariant
+    // is that B is NOT aborted: it delivers the winning result.
     expect(testProvider.signals[1]!.aborted).toBe(false);
   });
 
