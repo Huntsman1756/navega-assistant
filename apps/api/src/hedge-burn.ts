@@ -11,6 +11,9 @@ type BurnRow = {
   invalidOutput: boolean;
   otherFailure: boolean;
   observations: ProviderAttemptObservation[];
+  invalidA: number;
+  invalidB: number;
+  recovered: boolean;
 };
 
 function element(i: number, kind: "tiny" | "medium" | "large") {
