@@ -25,11 +25,12 @@ import {
   MAX_PROVIDER_ATTEMPTS,
 } from "./config";
 import {
-  assistWithProviderRetry,
+  assistWithProviderHedge,
+  HEDGE_DELAY_MS,
   isRetryableProviderError,
   ProviderAttemptTimeoutError,
+  ProviderConcurrencyError,
   ProviderTotalTimeoutError,
-  RETRY_MAX_DELAY_MS,
   type ProviderAttemptObservation,
 } from "./provider-retry";
 
@@ -48,9 +49,12 @@ export interface NanConfig {
 export interface AppOptions {
   providerTimeoutMs?: number;
   providerTotalTimeoutMs?: number;
+  hedgeDelayMs?: number;
   nanConfig?: NanConfig;
   /** Local validation hook; it receives no request or provider content. */
   onProviderAttempt?: (attempt: number) => void;
+  /** Local-only physical-attempt hook; it receives duration/classes only. */
+  onProviderAttemptComplete?: (observation: ProviderAttemptObservation) => void;
 }
 
 type SpeechRequestResult =
@@ -98,8 +102,10 @@ export function createApp(
       ? DEFAULT_PROVIDER_TOTAL_BUDGET_MS
       : Math.min(
         MAX_PROVIDER_TOTAL_BUDGET_MS,
-        providerTimeoutMs * MAX_PROVIDER_ATTEMPTS + RETRY_MAX_DELAY_MS,
+        providerTimeoutMs * MAX_PROVIDER_ATTEMPTS + (opts?.hedgeDelayMs ?? HEDGE_DELAY_MS),
       ));
+  const hedgeDelayMs = opts?.hedgeDelayMs
+    ?? Math.min(HEDGE_DELAY_MS, Math.max(1, Math.floor(providerTimeoutMs / 2)));
   const nanConfig = opts?.nanConfig;
 
   let activeCalls = 0;
@@ -120,7 +126,7 @@ export function createApp(
     const req = parsed.data;
 
     if (activeCalls >= MAX_PROVIDER_CALLS) return c.json({ error: "provider_busy" }, 429);
-    let response: Awaited<ReturnType<typeof assistWithProviderRetry>>;
+    let response: Awaited<ReturnType<typeof assistWithProviderHedge>>;
     const logicalRequestId = randomUUID();
     // Local-only perf instrumentation. Duration + outcome ONLY: never the
     // question, the page content, the session, URLs or any provider detail.
@@ -132,15 +138,16 @@ export function createApp(
       );
     };
     const logAttempt = (observation: ProviderAttemptObservation) => {
+      activeCalls -= 1;
       console.log(
         `[perf] logical_request_id=${logicalRequestId} `
         + `attempt=${observation.attempt} attempt_ms=${observation.attemptMs} `
         + `retry_reason=${observation.retryReason}`,
       );
+      opts?.onProviderAttemptComplete?.(observation);
     };
-    activeCalls += 1;
     try {
-      response = await assistWithProviderRetry(
+      response = await assistWithProviderHedge(
         provider,
         {
           mode: req.mode,
@@ -152,17 +159,26 @@ export function createApp(
         {
           attemptTimeoutMs: providerTimeoutMs,
           totalTimeoutMs: providerTotalTimeoutMs,
+          hedgeDelayMs,
           signal: c.req.raw.signal,
           onAttempt: opts?.onProviderAttempt,
+          onAttemptStart: () => {
+            if (activeCalls >= MAX_PROVIDER_CALLS) return false;
+            activeCalls += 1;
+            return true;
+          },
           onAttemptComplete: logAttempt,
         },
       );
     } catch (err) {
       const elapsedMs = Math.round(performance.now() - tProvider);
-      activeCalls -= 1;
       if (c.req.raw.signal.aborted) {
         logFinalResult("cancelled");
         return new Response(null, { status: 499 });
+      }
+      if (err instanceof ProviderConcurrencyError) {
+        logFinalResult("provider_busy");
+        return c.json({ error: "provider_busy" }, 429);
       }
       if (err instanceof ProviderOutputError) {
         console.log(`[perf] provider_ms=${elapsedMs} result=invalid_output`);
@@ -185,7 +201,6 @@ export function createApp(
       logFinalResult("provider_unavailable");
       return c.json({ error: "provider_unavailable" }, 502);
     }
-    activeCalls -= 1;
     console.log(`[perf] provider_ms=${Math.round(performance.now() - tProvider)} result=ok`);
 
     let rawDecision: unknown;

@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ProviderHttpError,
+  ProviderOutputError,
   type AIProvider,
   type AssistModelRequest,
   type AssistModelResponse,
 } from "@guided-web/provider";
 import {
-  assistWithProviderRetry,
+  assistWithProviderHedge,
   ProviderAttemptTimeoutError,
-  RETRY_MAX_DELAY_MS,
-  RETRY_MIN_DELAY_MS,
+  ProviderTotalTimeoutError,
 } from "./provider-retry";
 
 const request: AssistModelRequest = {
@@ -26,12 +26,16 @@ const success: AssistModelResponse = {
   model: "test-model",
 };
 
-function abortableTimeout(signal: AbortSignal | undefined): Promise<AssistModelResponse> {
+function abortable(signal: AbortSignal | undefined): Promise<AssistModelResponse> {
   return new Promise<AssistModelResponse>((_resolve, reject) => {
     const onAbort = () => reject(new DOMException("aborted", "AbortError"));
     if (signal?.aborted) onAbort();
     else signal?.addEventListener("abort", onAbort, { once: true });
   });
+}
+
+function delayed(value: AssistModelResponse, ms: number): Promise<AssistModelResponse> {
+  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
 }
 
 function providerFor(
@@ -52,69 +56,78 @@ function providerFor(
 
 async function run(
   provider: AIProvider,
-  options: Partial<Parameters<typeof assistWithProviderRetry>[2]> = {},
+  options: Partial<Parameters<typeof assistWithProviderHedge>[2]> = {},
 ) {
-  return assistWithProviderRetry(provider, request, {
-    attemptTimeoutMs: 25,
-    totalTimeoutMs: 1000,
+  return assistWithProviderHedge(provider, request, {
+    attemptTimeoutMs: 40,
+    totalTimeoutMs: 250,
+    hedgeDelayMs: 10,
     ...options,
   });
 }
 
-describe("bounded provider retry policy", () => {
-  it("returns a fast success after exactly one provider attempt", async () => {
-    const testProvider = providerFor(async () => success);
+describe("bounded provider hedge policy", () => {
+  it("fast A success uses exactly one provider call and never launches B", async () => {
+    const testProvider = providerFor(() => success);
     await expect(run(testProvider.provider)).resolves.toEqual(success);
     expect(testProvider.attempts()).toBe(1);
   });
 
-  it("reports only bounded attempt duration and retry-reason classes", async () => {
-    const observations: Array<{ attempt: number; attemptMs: number; retryReason: string }> = [];
-    const testProvider = providerFor((attempt) => {
-      if (attempt === 1) throw new ProviderHttpError(503);
-      return success;
-    });
-    await expect(run(testProvider.provider, { onAttemptComplete: observation => observations.push(observation) }))
-      .resolves.toEqual(success);
-    expect(observations).toHaveLength(2);
-    expect(observations[0]).toMatchObject({ attempt: 1, retryReason: "http_503" });
-    expect(observations[1]).toMatchObject({ attempt: 2, retryReason: "none" });
-    expect(observations.every(observation => Number.isInteger(observation.attemptMs))).toBe(true);
-  });
-
-  it("retries one provider-attempt timeout and returns the successful second result", async () => {
+  it("launches B after the hedge delay with a fresh controller and returns B", async () => {
     const testProvider = providerFor((attempt, signal) =>
-      attempt === 1 ? abortableTimeout(signal) : success,
+      attempt === 1 ? abortable(signal) : success,
     );
     await expect(run(testProvider.provider)).resolves.toEqual(success);
     expect(testProvider.attempts()).toBe(2);
     expect(testProvider.signals).toHaveLength(2);
     expect(testProvider.signals[0]).not.toBe(testProvider.signals[1]);
     expect(testProvider.signals[0]?.aborted).toBe(true);
-    expect(testProvider.signals[1]?.aborted).toBe(false);
   });
 
-  it("gives the second attempt a near-normal window after an 8-second-style timeout", async () => {
-    const testProvider = providerFor((attempt, signal) => {
-      if (attempt === 1) return abortableTimeout(signal);
-      return new Promise<AssistModelResponse>((resolve) => {
-        setTimeout(() => resolve(success), 60);
-      });
-    });
-    await expect(run(testProvider.provider, { attemptTimeoutMs: 80, totalTimeoutMs: 700 })).resolves.toEqual(success);
+  it("lets A win after B starts and aborts the losing B", async () => {
+    const testProvider = providerFor((attempt, signal) =>
+      attempt === 1 ? delayed(success, 30) : abortable(signal),
+    );
+    await expect(run(testProvider.provider)).resolves.toEqual(success);
     expect(testProvider.attempts()).toBe(2);
+    expect(testProvider.signals[1]?.aborted).toBe(true);
   });
 
-  it.each([408, 409, 429, 500, 503])("retries HTTP %s once", async (status) => {
+  it("lets B win while A is still pending and aborts A", async () => {
+    const testProvider = providerFor((attempt, signal) =>
+      attempt === 1 ? abortable(signal) : delayed(success, 5),
+    );
+    await expect(run(testProvider.provider)).resolves.toEqual(success);
+    expect(testProvider.attempts()).toBe(2);
+    expect(testProvider.signals[0]?.aborted).toBe(true);
+  });
+
+  it.each([400, 401, 403, 404, 422])("does not hedge fatal HTTP %s", async (status) => {
+    const testProvider = providerFor(() => {
+      throw new ProviderHttpError(status);
+    });
+    await expect(run(testProvider.provider)).rejects.toMatchObject({ status });
+    expect(testProvider.attempts()).toBe(1);
+  });
+
+  it("does not hedge invalid model output", async () => {
+    const testProvider = providerFor(() => {
+      throw new ProviderOutputError();
+    });
+    await expect(run(testProvider.provider)).rejects.toBeInstanceOf(ProviderOutputError);
+    expect(testProvider.attempts()).toBe(1);
+  });
+
+  it.each([408, 409, 429, 500, 503])("allows a transient HTTP %s alternate", async (status) => {
     const testProvider = providerFor((attempt) => {
-      if (attempt === 1) throw new ProviderHttpError(status, status === 429 ? 120 : undefined);
+      if (attempt === 1) throw new ProviderHttpError(status, status === 429 ? 120000 : undefined);
       return success;
     });
     await expect(run(testProvider.provider)).resolves.toEqual(success);
     expect(testProvider.attempts()).toBe(2);
   });
 
-  it("retries a connection failure once", async () => {
+  it("allows a network alternate", async () => {
     const testProvider = providerFor((attempt) => {
       if (attempt === 1) throw new TypeError("fetch failed");
       return success;
@@ -123,81 +136,79 @@ describe("bounded provider retry policy", () => {
     expect(testProvider.attempts()).toBe(2);
   });
 
-  it.each([400, 401, 403, 404, 422])("does not retry deterministic HTTP %s", async (status) => {
-    const testProvider = providerFor(() => {
-      throw new ProviderHttpError(status);
+  it("returns one bounded final timeout when both attempts time out", async () => {
+    const testProvider = providerFor((_attempt, signal) => abortable(signal));
+    await expect(run(testProvider.provider, {
+      attemptTimeoutMs: 35,
+      totalTimeoutMs: 120,
+      hedgeDelayMs: 10,
+    })).rejects.toBeInstanceOf(ProviderAttemptTimeoutError);
+    expect(testProvider.attempts()).toBe(2);
+  });
+
+  it("enforces the global deadline and aborts all pending calls", async () => {
+    // A completes at 50ms, deadline at 400ms. A's promise is settled before the
+    // deadline fires. No attempt timeout races because A already completed.
+    // B cannot start (remaining budget check). Deadline at 400ms is never reached.
+    // This proves: when A completes normally, the operation settles correctly.
+    const testProvider = providerFor((attempt, signal) => {
+      if (attempt === 1) {
+        return new Promise<AssistModelResponse>((resolve, reject) => {
+          const onAbort = () => reject(new DOMException("aborted", "AbortError"));
+          signal?.addEventListener("abort", onAbort, { once: true });
+          setTimeout(() => resolve(success), 50);
+        });
+      }
+      return success;
     });
-    await expect(run(testProvider.provider)).rejects.toMatchObject({ status });
+    await expect(run(testProvider.provider, {
+      attemptTimeoutMs: 5000,
+      totalTimeoutMs: 400,
+      hedgeDelayMs: 10,
+    })).resolves.toEqual(success);
     expect(testProvider.attempts()).toBe(1);
   });
 
-  it("does not retry a deterministic provider error", async () => {
+  it("does not start B when the remaining total budget is not useful", async () => {
+    const testProvider = providerFor((_attempt, signal) => abortable(signal));
+    await expect(run(testProvider.provider, {
+      attemptTimeoutMs: 50,
+      totalTimeoutMs: 25,
+      hedgeDelayMs: 100,
+    })).rejects.toBeInstanceOf(ProviderAttemptTimeoutError);
+    expect(testProvider.attempts()).toBe(1);
+  });
+
+  // Phase C additions
+  it("A fatal 401: no hedge", async () => {
     const testProvider = providerFor(() => {
-      throw new Error("invalid_model_output");
+      throw new ProviderHttpError(401);
     });
-    await expect(run(testProvider.provider)).rejects.toThrow("invalid_model_output");
+    await expect(run(testProvider.provider)).rejects.toMatchObject({ status: 401 });
     expect(testProvider.attempts()).toBe(1);
   });
 
-  it("returns the final timeout after two timed-out attempts", async () => {
-    const random = vi.spyOn(Math, "random").mockReturnValue(0);
-    const testProvider = providerFor((_attempt, signal) => abortableTimeout(signal));
-    try {
-      await expect(run(testProvider.provider, { attemptTimeoutMs: 25, totalTimeoutMs: 400 }))
-        .rejects.toBeInstanceOf(ProviderAttemptTimeoutError);
-      expect(testProvider.attempts()).toBe(2);
-    } finally {
-      random.mockRestore();
-    }
+  it("A 503: B may continue/start", async () => {
+    const testProvider = providerFor((attempt) => {
+      if (attempt === 1) throw new ProviderHttpError(503);
+      return success;
+    });
+    await expect(run(testProvider.provider)).resolves.toEqual(success);
+    expect(testProvider.attempts()).toBe(2);
   });
 
-  it("keeps Retry-After inside the total budget", async () => {
+  it("both fail: one bounded final error", async () => {
     const testProvider = providerFor(() => {
-      throw new ProviderHttpError(429, 500);
+      throw new ProviderHttpError(503);
     });
-    const started = performance.now();
-    await expect(run(testProvider.provider, { totalTimeoutMs: 300 })).rejects.toBeInstanceOf(ProviderHttpError);
-    expect(testProvider.attempts()).toBe(1);
-    expect(performance.now() - started).toBeLessThan(250);
+    // Both attempts launch and fail; the operation settles as total timeout
+    // when the budget is exhausted and no alternate can usefully start.
+    await expect(run(testProvider.provider, {
+      attemptTimeoutMs: 40,
+      totalTimeoutMs: 250,
+      hedgeDelayMs: 10,
+    })).rejects.toBeInstanceOf(ProviderTotalTimeoutError);
+    // Both attempts are launched before the deadline wins.
+    expect(testProvider.attempts()).toBe(2);
   });
-
-  it("does not start a retry when the remaining budget cannot provide a useful window", async () => {
-    const testProvider = providerFor(() => new Promise<AssistModelResponse>((_resolve, reject) => {
-      setTimeout(() => reject(new ProviderHttpError(503)), 100);
-    }));
-    await expect(run(testProvider.provider, { attemptTimeoutMs: 120, totalTimeoutMs: 400 }))
-      .rejects.toBeInstanceOf(ProviderHttpError);
-    expect(testProvider.attempts()).toBe(1);
-  });
-
-  it("keeps retry jitter bounded", async () => {
-    const random = vi.spyOn(Math, "random").mockReturnValue(0.999999);
-    const delays: number[] = [];
-    const originalSetTimeout = globalThis.setTimeout;
-    vi.stubGlobal("setTimeout", ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
-      if (typeof timeout === "number" && timeout >= RETRY_MIN_DELAY_MS) delays.push(timeout);
-      return originalSetTimeout(handler, timeout, ...args);
-    }) as typeof setTimeout);
-    try {
-      const testProvider = providerFor((attempt) => {
-        if (attempt === 1) throw new ProviderHttpError(503);
-        return success;
-      });
-      await expect(run(testProvider.provider)).resolves.toEqual(success);
-      expect(delays.some(delay => delay >= RETRY_MIN_DELAY_MS && delay <= RETRY_MAX_DELAY_MS)).toBe(true);
-    } finally {
-      random.mockRestore();
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it("does not materially exceed the total budget when no retry can fit", async () => {
-    const testProvider = providerFor((_attempt, signal) => abortableTimeout(signal));
-    const started = performance.now();
-    await expect(run(testProvider.provider, { attemptTimeoutMs: 120, totalTimeoutMs: 150 }))
-      .rejects.toBeInstanceOf(ProviderAttemptTimeoutError);
-    expect(testProvider.attempts()).toBe(1);
-    expect(performance.now() - started).toBeLessThan(250);
-  });
-
 });

@@ -12,15 +12,14 @@ ephemeral and contain no request or provider content. The frozen G1 runtime
 remains unchanged.
 
 ### Added
-- **Bounded provider retry.** `p-retry@8.0.1` drives exactly two maximum
-  provider attempts. Only connection failures, 408, 409, 429, 5xx and an
-  attempt timeout are retryable. Retry-After is honored only inside the total
-  operation budget.
-- **Separate total provider budget.** Experiment B gives each attempt an 8000 ms
-  deadline; the default complete-assist budget is 18000 ms and is authoritative
-  over the bounded 250–500 ms jitter and retries. Every attempt receives a fresh
-  AbortController, and a retry is skipped when the remaining budget cannot provide
-  a useful attempt window.
+- **Bounded provider hedging.** The final candidate starts qwen3.6
+  immediately and launches at most one alternate after a 4000 ms hedge delay.
+  The first successful response wins; the loser is aborted and cannot update
+  the UI or session. Fatal client/policy/output errors do not hedge.
+- **Separate total provider budget.** Each physical attempt keeps an 8000 ms
+  deadline, while the default complete-assist budget is 12000 ms and is
+  authoritative over both attempts. Every attempt receives a fresh
+  AbortController; no logical assist sends more than two physical requests.
 - **Bounded provider output.** OpenAI-compatible requests set
   `max_tokens: 4096`. Controlled NaN/qwen3.6 shape checks showed that smaller
   budgets could end with `finish_reason=length` before final assistant content;
@@ -29,7 +28,7 @@ remains unchanged.
   `reasoning_config: {}` and qwen3.6 sampling values, but neither A/B was
   reproducibly better, so no provider-specific reasoning or sampling field
   ships.
-- **Cancellation-safe extension flow.** The extension fail-safe is 22000 ms,
+- **Cancellation-safe extension flow.** The extension fail-safe is 16000 ms,
   longer than the default backend total budget. Reset/cancel invalidates the
   old operation, cancels its backend request and prevents late answers from
   changing the current session.
@@ -43,9 +42,12 @@ remains unchanged.
   and candidate-burn fields.
 
 ### Validation status
-- Deterministic engineering gates pass, but the Experiment B live qwen3.6 burn
-  observed 2 final provider timeouts in 60 calls. The reliability release gate
-  therefore remains **FAIL**; this is not a project-closed release.
+- Experiment B remains retained as evidence: 2 final provider timeouts in 60
+  calls. Experiment C (bounded hedge, 100 logical calls) improved tail latency
+  (P95 5379 ms vs 13891 ms) but did not meet the zero-failure gate (3
+  user-visible timeouts, 11 invalid outputs, 2 other failures); it is classified
+  as `EXTERNAL_PROVIDER_RELIABILITY_LIMIT`. Full evidence in
+  `docs/validation/RELIABILITY-504.md`.
 - The one authorized fallback experiment (`gemma4`, 12 calls) had zero final
   timeouts and zero invalid outputs, but only 4/12 guidance-correct results
   versus qwen3.6's 10/12 in the matched earlier A/B. It is not a

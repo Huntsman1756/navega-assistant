@@ -262,10 +262,12 @@ function trackDeadlineTimers(markerDelay: number) {
   const realSet = globalThis.setTimeout;
   const realClear = globalThis.clearTimeout;
   const timers = new Map<unknown, { fired: boolean }>();
+  let firedCount = 0;
   globalThis.setTimeout = ((cb: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) => {
     const record = { fired: false };
     const wrapped = (...a: unknown[]) => {
       record.fired = true;
+      if (ms === markerDelay) firedCount += 1;
       cb(...a);
     };
     const id = realSet(wrapped, ms, ...args);
@@ -277,7 +279,7 @@ function trackDeadlineTimers(markerDelay: number) {
     realClear(id as ReturnType<typeof globalThis.setTimeout>);
   }) as typeof globalThis.clearTimeout;
   return {
-    firedCount: () => [...timers.values()].filter((t) => t.fired).length,
+    firedCount: () => firedCount,
     pendingCount: () => timers.size,
     restore: () => {
       globalThis.setTimeout = realSet;

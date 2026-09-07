@@ -138,7 +138,9 @@ samples): p50 ~0.7 s, p95 ~1.7 s, with a heavy-tail outlier (~11.5 s). The
 median is healthy; the risk is an unbounded outlier leaving the user waiting
 forever at “Preguntando al asistente…”. The closure is **deadlines + honest
 errors**, NOT model/context changes or undocumented model flags. The candidate
-uses one bounded retry for transient provider failures; it does not stream.
+uses one bounded hedge for transient provider failures and long-tail inference;
+it does not stream or send more than two physical requests for one logical
+assist.
 
 ### Provider deadline (backend)
 
@@ -150,11 +152,14 @@ uses one bounded retry for transient provider failures; it does not stream.
   validated: it must be an integer between 1000 and 30000; anything else logs a
   warning and falls back to 8000 (a bad `.env` can never disable fail-fast).
 - The complete operation has a separate `AI_PROVIDER_TOTAL_TIMEOUT_MS` budget
-  (default 18000 ms, maximum 18000 ms) and at most `MAX_PROVIDER_ATTEMPTS = 2`.
-  The total budget is authoritative over per-attempt deadlines and backoff.
-- Retry is limited to connection failures, 408, 409, 429, 5xx and an attempt
-  timeout. Deterministic client, policy and structured-output errors are not
-  retried. A successful retry is a normal answer; two failures produce
+  (default and maximum 12000 ms) and at most `MAX_PROVIDER_ATTEMPTS = 2`.
+  Attempt A starts immediately; if it is still pending after
+  `HEDGE_DELAY_MS = 4000`, attempt B starts with a fresh controller. The total
+  budget is authoritative over both attempt deadlines.
+- Alternate execution is limited to connection failures, 408, 409, 429, 5xx
+  and an attempt timeout. Deterministic client, policy and structured-output
+  errors are fatal and do not start or continue a hedge. The first successful
+  response is a normal answer; two failures produce
   **HTTP 504 `{ "error": "provider_timeout" }`** when the failure is timeout-like,
   otherwise `provider_unavailable` (502). The deadline timers are cleared.
 - The provider request includes `max_tokens = 4096`, which bounds output cost
@@ -163,8 +168,8 @@ uses one bounded retry for transient provider failures; it does not stream.
 ### Extension fail-safe deadline (browser side)
 
 - The service worker wraps the extension → localhost request with its own
-  deadline: `BACKEND_REQUEST_TIMEOUT_MS = 22000`. It is deliberately LONGER
-  than the complete provider budget (18000) so the backend normally wins the
+  deadline: `BACKEND_REQUEST_TIMEOUT_MS = 16000`. It is deliberately LONGER
+  than the complete provider budget (12000) so the backend normally wins the
   race and returns a precise result; the browser deadline only fires if the
   backend itself is hung or unreachable.
 - If OUR deadline fires first → `backend_timeout`. A connection failure remains

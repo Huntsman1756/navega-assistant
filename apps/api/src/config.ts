@@ -6,16 +6,16 @@ export const MAX_PROVIDER_ATTEMPTS = 2;
 export const DEFAULT_PROVIDER_TIMEOUT_MS = 8000;
 export const MIN_PROVIDER_TIMEOUT_MS = 1000;
 export const MAX_PROVIDER_TIMEOUT_MS = 30000;
-export const DEFAULT_PROVIDER_TOTAL_BUDGET_MS = 18000;
+export const DEFAULT_PROVIDER_TOTAL_BUDGET_MS = 12000;
 export const MIN_PROVIDER_TOTAL_BUDGET_MS = 1000;
-export const MAX_PROVIDER_TOTAL_BUDGET_MS = 18000;
+export const MAX_PROVIDER_TOTAL_BUDGET_MS = 12000;
 
 /**
  * Hard deadline for a single provider call. The real-provider measurements
  * (qwen3.6, 20 samples) show p50 ~0.7 s and p95 ~1.7 s; the problem is the
- * heavy tail (observed max 11.5 s). The experiment-B allocation deliberately
- * gives each of two attempts a normal 8000 ms window inside the separate
- * 18000 ms total-operation budget below.
+ * heavy tail (observed max 11.5 s). The final candidate launches one
+ * alternate at a 4000 ms hedge delay and keeps the complete logical-operation
+ * deadline at 12000 ms.
  */
 export const DEFAULT_NAN_BASE_URL = "https://api.nan.builders";
 
@@ -43,7 +43,7 @@ export function parseProviderTimeoutMs(raw: string | undefined): number {
 
 /**
  * Parses the hard budget for the complete assist operation, including one
- * bounded retry and its delay. This budget is authoritative over per-attempt
+ * bounded hedge. This budget is authoritative over per-attempt
  * timeouts and is intentionally capped below the extension fail-safe.
  */
 export function parseProviderTotalBudgetMs(raw: string | undefined): number {
@@ -71,7 +71,7 @@ export interface ApiConfig {
   model?: string;
   /** Hard timeout (ms) on each provider attempt. Default 8000. */
   providerTimeoutMs: number;
-  /** Hard timeout (ms) for the complete assist operation. Default 18000. */
+  /** Hard timeout (ms) for the complete assist operation. Default 12000. */
   providerTotalTimeoutMs: number;
   /** Derived NaN base URL (without /v1 suffix). */
   nanBaseUrl?: string;

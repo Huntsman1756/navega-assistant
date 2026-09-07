@@ -169,3 +169,148 @@ the deterministic engineering contract, but reliability closure is not a
 release PASS: Experiment B still had 2 user-visible provider timeouts. The
 authorized fallback experiment did not establish a safe non-inferior model.
 Voice live validation and P01-P04 remain separate human gates.
+
+## Experiment C — final model and hedging decision
+
+Experiment B was preserved at `b803a3399a64a6afe4c0b1665e026570d9cad1e8` and
+was not repeated. The current candidate queried NaN's OpenAI-compatible model
+catalogue with the operator's existing key; only model identifiers were
+retained. `qwen3.8-flash` was available.
+
+### qwen3.8-flash paired A/B
+
+The paired set contained 26 fixed synthetic cases, run sequentially with the
+same prompt, schema, context, temperature and `max_tokens: 4096`. It covered
+login/recovery, forms, confusing/error states, explanations, follow-up state,
+permission-like fixtures and bounded larger DOM contexts (130 elements).
+Guidance was judged by a fixed offline rubric; no question, DOM, session, URL
+or model output was stored. Each case ran as a single provider attempt (no
+hedge) so model quality and raw latency were measured independently.
+
+`SCHEMA_INVALID_OR_NON200` below includes non-200 calls as well as malformed or
+schema-invalid output; it is not a claim that every non-200 response contained
+malformed JSON.
+
+```text
+QWEN38_AVAILABLE = YES
+QWEN38_AB_N = 26 paired cases per model
+
+QWEN36:
+  HTTP_200 = 25
+  SCHEMA_VALID = 25
+  SCHEMA_INVALID_OR_NON200 = 1
+  GUIDANCE_CORRECT = 20
+  GUIDANCE_UNCLEAR = 3
+  TARGET_CORRECT = 20
+  TIMEOUTS = 1
+  OTHER_ERRORS = 0
+  P50 = 2743 ms
+  P95 = 14075 ms
+  MAX = 15004 ms
+
+QWEN38_FLASH:
+  HTTP_200 = 22
+  SCHEMA_VALID = 22
+  SCHEMA_INVALID_OR_NON200 = 4
+  GUIDANCE_CORRECT = 17
+  GUIDANCE_UNCLEAR = 2
+  TARGET_CORRECT = 17
+  TIMEOUTS = 4
+  OTHER_ERRORS = 0
+  P50 = 6545 ms
+  P95 = 15009 ms
+  MAX = 15010 ms
+```
+
+`qwen3.8-flash` failed the qwen3.6 non-inferiority gate (17/26 vs 20/26
+guidance-correct), had a higher schema-invalid count (4 vs 1), more timeouts
+(4 vs 1) and a ~2.4x worse median (6545 ms vs 2743 ms). It was not adopted.
+`MODEL_DECISION = KEEP_QWEN36`.
+
+### Hedging upstream audit and selected design
+
+The gRPC A6 proposal and `@fetchkit/ffetch` hedge plugin were inspected as
+recorded in `docs/UPSTREAM-REUSE.md`; both were classified PATTERN_ONLY. The
+candidate uses a provider-specific native adapter with the same bounded
+first-success-wins semantics. It does not add an HTTP-client stack, a second
+proxy, a third attempt or parallel hedging beyond the one alternate.
+
+```text
+PROVIDER_ATTEMPT_TIMEOUT_MS = 8000
+PROVIDER_TOTAL_BUDGET_MS = 12000
+SELECTED_HEDGE_DELAY_MS = 4000
+EXPECTED_HEDGE_RATE = 10-25% target; measured 18% by the burn below
+LOGICAL_DEADLINE_MS = 12000
+EXTENSION_FAILSAFE_MS = 16000
+MAX_PROVIDER_ATTEMPTS = 2 physical calls
+MAX_OUTPUT_TOKENS = 4096
+```
+
+Attempt A starts immediately. If still pending at 4000 ms, B starts with a
+fresh `AbortController`; the first successful response wins and aborts the
+loser. 400/401/403/404/422, invalid model output and policy failures do not
+start or continue a hedge. The global logical deadline is authoritative.
+
+### Experiment C live hedge burn
+
+Real NaN/qwen3.6, synthetic fixtures only, one active request, sequential
+requests, balanced tiny/medium/large contexts, and a 2-second inter-call pause.
+The runner retained only duration/outcome fields and an ephemeral local
+request identifier; it did not retain question, DOM, session, URL, model
+output, or API key data.
+
+```text
+LOGICAL_N = 100
+HEDGES_LAUNCHED = 18
+HEDGE_RATE = 18.0%
+A_WINS = 72
+B_WINS = 12
+USER_VISIBLE_TIMEOUTS = 3
+OTHER_FAILURES = 2
+INVALID_MODEL_OUTPUT = 11
+P50 = 701 ms total
+P95 = 5379 ms total
+MAX = 12031 ms total
+```
+
+Hedging materially reduced tail latency versus the Experiment B baseline
+(P95 5379 ms vs 13891 ms; P50 701 ms vs 1361 ms) and its hedge rate of 18%
+is inside the 10-25% target. Hedging targets only the slow tail, not ordinary
+requests.
+
+However the practical candidate gate was NOT met: user-visible timeouts (3)
+and invalid model output (11) are both above the required zero. The invalid
+outputs are model quality, not a latency artefact: the hedge does not retry
+invalid structured output, and a naive "first provider response wins" can
+select a schema-invalid alternate over a still-pending valid original.
+
+```text
+MODEL_DECISION = KEEP_QWEN36
+HEDGE_UPSTREAM_DECISION = PATTERN_ONLY
+HEDGE_DELAY_MS = 4000
+LOGICAL_DEADLINE_MS = 12000
+EXTENSION_FAILSAFE_MS = 16000
+RELIABILITY_DECISION = EXTERNAL_PROVIDER_RELIABILITY_LIMIT
+```
+
+Per the stop rule, hedged qwen3.6 still produced recurrent visible timeouts
+(3/100) and recurrent invalid model output (11/100). No third attempt, no
+further model search and no additional timeout tuning was performed. This is
+classified as an external provider reliability limit: the application already
+preserves the user's question and presents a recoverable error. The 0/100 gate
+is a bounded engineering burn, NOT proof of a zero production failure rate or
+any SLA.
+
+### Deterministic engineering contract
+
+The hedged adapter passes the deterministic contract: fast A success never
+launches B; B launches after the hedge delay with a fresh controller; A wins
+and aborts B; B wins and aborts A; fatal 400/401/403/404/422 never hedge;
+transient 408/409/429/5xx/network may launch the alternate; both-fail returns
+one bounded final error; the global deadline aborts all pending calls; exactly
+one session result is appended; no stale answer is delivered; `activeCalls`
+returns correctly; and at most two upstream calls occur.
+
+The 11% invalid-model-output in this burn reflects both model instability and
+the hedge's first-provider-response-wins selection, and is documented honestly
+rather than hidden behind a retry loop.

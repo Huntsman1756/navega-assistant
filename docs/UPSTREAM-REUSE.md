@@ -564,7 +564,7 @@ Evaluated 2026-09-06 for the post-G1 candidate only. The frozen
   error boundary remain unchanged. The SDK's own retry authority would add a
   second timeout/retry policy and a disproportionate migration surface.
 
-### p-retry — REUSE
+### p-retry — REUSE (Experiment B), superseded by the native hedge adapter
 
 - **Repository:** <https://github.com/sindresorhus/p-retry>
 - **Inspected revision:** tag `v8.0.1`, commit
@@ -573,11 +573,11 @@ Evaluated 2026-09-06 for the post-G1 candidate only. The frozen
 - **Exact source inspected:** `index.js` and `index.d.ts`. The maintained
   implementation provides bounded retries, exponential delay, optional jitter,
   `shouldRetry`, `maxRetryTime` and `AbortSignal` handling.
-- **Decision:** REUSE. `p-retry@8.0.1` is a direct API dependency. Navega's
-  adapter in `apps/api/src/provider-retry.ts` supplies the product-specific
-  policy: exactly two attempts, explicit retryable status/error classes,
-  bounded `Retry-After`, fresh per-attempt controllers and an 18-second total
-  budget. No upstream source was copied.
+- **Decision:** REUSE for Experiment B only. `p-retry@8.0.1` drove the bounded
+  sequential retry in Experiment B's candidate. Experiment C replaced
+  sequential retry with a native hedge adapter, so `p-retry` is no longer an
+  imported dependency and was removed from `apps/api`. No upstream source was
+  copied into Navega.
 
 ### ai-retry — PATTERN_ONLY
 
@@ -614,3 +614,47 @@ field. NaN's documented qwen3.6 sampling values (`temperature=0.6`,
 `top_p=0.95`) were also tested in a same-fixture A/B and rejected: guidance
 correctness was lower and one final timeout remained. Reliability remains
 bounded independently through the retry policy and output budget.
+
+### gRPC A6 client retries / hedging proposal — PATTERN_ONLY
+
+- **Repository:** <https://github.com/grpc/proposal>
+- **Inspected revision:** `A6-client-retries.md` at commit
+  `ea171853716a7d99df095148d3900447d8ad6a4b` (current `master` observed during
+  Experiment C).
+- **License:** Apache-2.0.
+- **Exact semantics used:** an initial attempt starts immediately; a bounded
+  hedge starts after a delay when the first is still pending; the first
+  successful response wins; fatal status codes cancel outstanding attempts;
+  successful completion cancels the loser; one global deadline covers the
+  whole logical call; and the attempt count is bounded.
+- **Decision:** PATTERN_ONLY. The proposal describes the right semantics, but
+  it is a proposal document rather than a drop-in Node client. Navega's
+  provider contract needs its own schema/error boundary and physical-slot
+  accounting.
+
+### `@fetchkit/ffetch` hedge plugin — PATTERN_ONLY
+
+- **Repository:** <https://github.com/fetch-kit/ffetch>
+- **Inspected revision:** commit `f20c1c383e67da49dbefc6bc3f208be541cf8fdf`
+  (npm `@fetchkit/ffetch` `5.6.2`).
+- **License:** MIT.
+- **Exact source inspected:** `src/plugins/hedge.ts` and `package.json`. The
+  plugin uses independent abort controllers, a parent signal, bounded hedge
+  count and delay, and cancels losing requests. Its generic response policy
+  also treats ordinary safe HTTP methods specially, while Navega sends a POST
+  and must classify provider 400/401/403/404/422 as fatal and model-output
+  failures as non-hedgeable.
+- **Decision:** PATTERN_ONLY. Adding a complete HTTP-client stack would be
+  disproportionate for this new/low-adoption dependency and would not express
+  Navega's provider-specific policy without another adapter.
+
+### Experiment C implementation decision
+
+Navega uses a small native adapter in `apps/api/src/provider-retry.ts` rather
+than introducing a new HTTP-client stack. It implements the A6 semantics:
+one immediate qwen3.6 attempt, at most one 4000 ms hedge, independent
+`AbortController`s, first-success-wins, cancellation of the loser, a 12000 ms
+logical deadline and physical slot release on every attempt completion. The
+`p-retry@8.0.1` solution was reused for Experiment B and was not stacked on top
+of the final hedging path; it was removed as a dependency once the native hedge
+adapter became the mechanism, so there is no second retry authority.

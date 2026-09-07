@@ -18,8 +18,7 @@
     "@guided-web/provider": "workspace:*",
     "@guided-web/security-policy": "workspace:*",
     "@hono/node-server": "^1.12.0",
-    "hono": "^4.6.3",
-    "p-retry": "8.0.1"
+    "hono": "^4.6.3"
   },
   "devDependencies": {
     "@types/node": "^22.5.0",
