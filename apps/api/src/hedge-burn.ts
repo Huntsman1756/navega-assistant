@@ -146,6 +146,9 @@ try {
     current.timeout = body.error === "provider_timeout";
     current.invalidOutput = body.error === "invalid_model_output";
     current.otherFailure = response.status !== 200 && !current.timeout && !current.invalidOutput;
+    current.invalidA = current.observations.filter((o) => o.attempt === 1 && (o.retryReason === "invalid_model_output" || o.retryReason === "validation_failed")).length;
+    current.invalidB = current.observations.filter((o) => o.attempt === 2 && (o.retryReason === "invalid_model_output" || o.retryReason === "validation_failed")).length;
+    current.recovered = current.invalidA > 0 && current.invalidB === 0 && !current.timeout && !current.invalidOutput;
     rows.push(current);
     current = undefined;
     if (i < 99) await pause(2000);
