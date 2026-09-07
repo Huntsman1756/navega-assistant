@@ -155,10 +155,16 @@ try {
   }
 
   const durations = rows.map((row) => row.totalMs);
+  const totalInvalidA = rows.reduce((s, r) => s + r.invalidA, 0);
+  const totalInvalidB = rows.reduce((s, r) => s + r.invalidB, 0);
+  const totalRecovered = rows.filter((r) => r.recovered).length;
   const output = {
     LOGICAL_N: rows.length,
     HEDGES_LAUNCHED: rows.filter((row) => row.hedged).length,
     HEDGE_RATE: `${((rows.filter((row) => row.hedged).length / rows.length) * 100).toFixed(1)}%`,
+    INVALID_PHYSICAL_A: totalInvalidA,
+    INVALID_PHYSICAL_B: totalInvalidB,
+    INVALID_RECOVERED_BY_ALTERNATE: totalRecovered,
     A_WINS: rows.filter((row) => row.winner === "A").length,
     B_WINS: rows.filter((row) => row.winner === "B").length,
     USER_VISIBLE_TIMEOUTS: rows.filter((row) => row.timeout).length,
