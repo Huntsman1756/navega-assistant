@@ -6,10 +6,12 @@ import {
   type AssistModelRequest,
   type AssistModelResponse,
 } from "@guided-web/provider";
+import { P0AssistantDecisionSchema } from "@guided-web/protocol";
 import {
   assistWithProviderHedge,
   ProviderAttemptTimeoutError,
   ProviderTotalTimeoutError,
+  ProviderValidationFailedError,
 } from "./provider-retry";
 
 const request: AssistModelRequest = {
@@ -22,6 +24,18 @@ const request: AssistModelRequest = {
 
 const success: AssistModelResponse = {
   raw: JSON.stringify({ kind: "explain", message: "Continue" }),
+  provider: "test",
+  model: "test-model",
+};
+
+const invalidJsonResponse: AssistModelResponse = {
+  raw: "this is not json",
+  provider: "test",
+  model: "test-model",
+};
+
+const invalidSchemaResponse: AssistModelResponse = {
+  raw: JSON.stringify({ kind: "unknown_action", data: "not allowed by schema" }),
   provider: "test",
   model: "test-model",
 };
@@ -210,5 +224,194 @@ describe("bounded provider hedge policy", () => {
     })).rejects.toBeInstanceOf(ProviderTotalTimeoutError);
     // Both attempts are launched before the deadline wins.
     expect(testProvider.attempts()).toBe(2);
+  });
+
+  // ── C2: validated hedge semantics ──
+
+  function withValidation(provider: AIProvider, opts = {}) {
+    return assistWithProviderHedge(provider, request, {
+      attemptTimeoutMs: 500,
+      totalTimeoutMs: 3000,
+      hedgeDelayMs: 10,
+      validateResponse: (response) => {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(response.raw);
+        } catch {
+          throw new ProviderValidationFailedError();
+        }
+        const result = P0AssistantDecisionSchema.safeParse(parsed);
+        if (!result.success) {
+          throw new ProviderValidationFailedError();
+        }
+        return response;
+      },
+      ...opts,
+    });
+  }
+
+  it("C2: A valid fast → A wins → B never starts", async () => {
+    const testProvider = providerFor(() => success);
+    await expect(withValidation(testProvider.provider)).resolves.toEqual(success);
+    expect(testProvider.attempts()).toBe(1);
+  });
+
+  it("C2: A invalid JSON before hedge delay → B starts → B valid → success", async () => {
+    const testProvider = providerFor((attempt) => {
+      if (attempt === 1) return invalidJsonResponse;
+      return success;
+    });
+    await expect(withValidation(testProvider.provider)).resolves.toEqual(success);
+    expect(testProvider.attempts()).toBe(2);
+  });
+
+  it("C2: A schema-invalid before hedge delay → B starts → B valid → success", async () => {
+    const testProvider = providerFor((attempt) => {
+      if (attempt === 1) return invalidSchemaResponse;
+      return success;
+    });
+    await expect(withValidation(testProvider.provider)).resolves.toEqual(success);
+    expect(testProvider.attempts()).toBe(2);
+  });
+
+  it("C2: A invalid while B already running → B NOT aborted", async () => {
+    // A takes 20ms (longer than hedge delay 10ms) so B starts before A resolves.
+    // A's validation then fails, but B is already running and NOT aborted.
+    const testProvider = providerFor((attempt, signal) => {
+      if (attempt === 1) return delayed(invalidJsonResponse, 20);
+      return new Promise<AssistModelResponse>((resolve) => {
+        const onAbort = () => {
+          resolve({ raw: "ABORTED", provider: "test" });
+        };
+        signal?.addEventListener("abort", onAbort, { once: true });
+        setTimeout(() => resolve(success), 5);
+      });
+    });
+    const result = await withValidation(testProvider.provider);
+    expect(result).toEqual(success);
+    expect(testProvider.attempts()).toBe(2);
+    expect(testProvider.signals[0]!.aborted).toBe(true);
+    expect(testProvider.signals[1]!.aborted).toBe(false);
+  });
+
+  it("C2: A invalid + B invalid → final invalid_model_output", async () => {
+    const testProvider = providerFor(() => invalidJsonResponse);
+    await expect(withValidation(testProvider.provider)).rejects.toBeInstanceOf(ProviderValidationFailedError);
+    expect(testProvider.attempts()).toBe(2);
+  });
+
+  it("C2: A invalid + B timeout → deterministic final classification", async () => {
+    const testProvider = providerFor((attempt, signal) => {
+      if (attempt === 1) return invalidJsonResponse;
+      return abortable(signal);
+    });
+    await expect(
+      withValidation(testProvider.provider, {
+        attemptTimeoutMs: 500,
+        totalTimeoutMs: 800,
+      }),
+    ).rejects.toBeInstanceOf(ProviderAttemptTimeoutError);
+    expect(testProvider.attempts()).toBe(2);
+  });
+
+  it("C2: A timeout + B valid → success", async () => {
+    const testProvider = providerFor((attempt, signal) => {
+      if (attempt === 1) return abortable(signal);
+      return success;
+    });
+    await expect(withValidation(testProvider.provider)).resolves.toEqual(success);
+    expect(testProvider.attempts()).toBe(2);
+    expect(testProvider.signals[0]?.aborted).toBe(true);
+  });
+
+  it("C2: A valid + B invalid → A wins normally", async () => {
+    // A takes 20ms (longer than hedge delay 10ms) so B starts.
+    // A is valid, B is invalid. A wins, B is aborted.
+    const testProvider = providerFor((attempt, signal) => {
+      if (attempt === 1) return delayed(success, 20);
+      return delayed(invalidSchemaResponse, 5);
+    });
+    const result = await withValidation(testProvider.provider);
+    expect(result).toEqual(success);
+    expect(testProvider.attempts()).toBe(2);
+    expect(testProvider.signals[1]!.aborted).toBe(true);
+  });
+
+  it("C2: max two physical calls", async () => {
+    const testProvider = providerFor((attempt) => {
+      if (attempt === 1) return delayed(success, 5000);
+      return delayed(success, 5000);
+    });
+    // Both attempts can launch because totalTimeout > attemptTimeout.
+    // Both time out. Only 2 physical calls happen.
+    await expect(
+      withValidation(testProvider.provider, {
+        totalTimeoutMs: 2000,
+        attemptTimeoutMs: 500,
+      }),
+    ).rejects.toBeInstanceOf(ProviderAttemptTimeoutError);
+    // The key assertion: max 2 physical calls.
+    expect(testProvider.attempts()).toBe(2);
+  });
+
+  it("C2: one logical session result only (resolve + reject must not double-fire)", async () => {
+    const testProvider = providerFor((attempt) => {
+      if (attempt === 1) return invalidJsonResponse;
+      return success;
+    });
+    let settled = false;
+    let callCount = 0;
+    const result = withValidation(testProvider.provider).then(
+      () => { settled = true; callCount++; },
+      () => { settled = true; callCount++; },
+    );
+    await result;
+    await new Promise((r) => setTimeout(r, 50));
+    expect(settled).toBe(true);
+    expect(callCount).toBe(1);
+  });
+
+  it("C2: global deadline preserved (12s budget)", async () => {
+    const testProvider = providerFor((attempt, signal) => {
+      if (attempt === 1) return invalidJsonResponse;
+      return abortable(signal);
+    });
+    const start = performance.now();
+    // attemptTimeout=400ms, totalTimeout=500ms. B's attempt timeout fires first.
+    // We verify the total time does not exceed the global deadline + margin.
+    await expect(
+      withValidation(testProvider.provider, {
+        totalTimeoutMs: 5000,
+        attemptTimeoutMs: 400,
+      }),
+    ).rejects.toBeInstanceOf(ProviderAttemptTimeoutError);
+    const elapsed = performance.now() - start;
+    // The total wall-clock time is bounded by totalTimeout.
+    expect(elapsed).toBeLessThan(5500);
+    expect(testProvider.attempts()).toBe(2);
+  });
+
+  it("C2: activeCalls returns to zero (no hanging callbacks)", async () => {
+    const testProvider = providerFor((attempt, signal) => {
+      if (attempt === 1) return invalidJsonResponse;
+      return abortable(signal);
+    });
+    let activeCalls = 0;
+    let maxCalls = 0;
+    await withValidation(testProvider.provider, {
+      onAttemptStart: () => {
+        activeCalls++;
+        maxCalls = Math.max(maxCalls, activeCalls);
+        return true;
+      },
+      onAttemptComplete: () => {
+        activeCalls--;
+      },
+      totalTimeoutMs: 500,
+      attemptTimeoutMs: 500,
+    }).catch(() => {});
+    await new Promise((r) => setTimeout(r, 50));
+    expect(maxCalls).toBeLessThanOrEqual(2);
+    expect(activeCalls).toBe(0);
   });
 });

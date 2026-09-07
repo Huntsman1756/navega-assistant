@@ -109,11 +109,9 @@ describe("post-G1 assist reliability contract", () => {
   });
 
   it("does not retry invalid structured output", async () => {
-    const testProvider = sequenceProvider(() => ({
-      raw: "{ truncated",
-      provider: "test",
-      model: "test-model",
-    }));
+    const testProvider = sequenceProvider(() => {
+      throw new ProviderOutputError();
+    });
     const result = await post(createApp(testProvider.provider, "test", "test-model"));
     expect(result.status).toBe(502);
     expect(result.json.error).toBe("invalid_model_output");

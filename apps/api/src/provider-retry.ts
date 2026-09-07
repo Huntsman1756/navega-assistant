@@ -32,6 +32,18 @@ export class ProviderConcurrencyError extends Error {
   }
 }
 
+/**
+ * A caller-injected `validateResponse` rejected a physical provider
+ * response.  Unlike `ProviderOutputError` this is not a provider fault —
+ * it signals the hedge should try the alternate attempt.
+ */
+export class ProviderValidationFailedError extends Error {
+  constructor() {
+    super("Provider response failed caller validation");
+    this.name = "ProviderValidationFailedError";
+  }
+}
+
 export interface ProviderAttemptObservation {
   attempt: 1 | 2;
   attemptMs: number;
@@ -49,6 +61,17 @@ export interface ProviderHedgeOptions {
   onAttemptStart?: (attempt: 1 | 2) => boolean;
   /** Local-only duration/class observability. It receives no request content. */
   onAttemptComplete?: (observation: ProviderAttemptObservation) => void;
+  /**
+   * Validates a physical provider response before it is declared the hedge
+   * winner.  Receives the raw `AssistModelResponse` and must return a
+   * validated response (or the same response) to promote it, or throw to
+   * treat it as an invalid physical response that does NOT settle the hedge.
+   *
+   * When absent the hedge uses the legacy semantics: any non-empty
+   * `message.content` wins.  When present the hedge only calls
+   * `settleSuccess` after validation passes.
+   */
+  validateResponse?: (response: AssistModelResponse) => AssistModelResponse | Promise<AssistModelResponse>;
 }
 
 export function isRetryableProviderError(error: unknown): boolean {
@@ -59,6 +82,9 @@ export function isRetryableProviderError(error: unknown): boolean {
       || error.status === 429
       || error.status >= 500;
   }
+  // Validation failures from the caller's validateResponse are retryable
+  // because the alternate attempt may produce a valid response.
+  if (error instanceof ProviderValidationFailedError) return true;
   // Some test adapters and fetch implementations expose a connection failure
   // as TypeError. Generic Error values remain deterministic and are not retried.
   return error instanceof TypeError;
@@ -69,6 +95,7 @@ function retryReason(error: unknown): string {
   if (error instanceof ProviderHttpError) return `http_${error.status}`;
   if (error instanceof ProviderConnectionError || error instanceof TypeError) return "network";
   if (error instanceof ProviderOutputError) return "invalid_model_output";
+  if (error instanceof ProviderValidationFailedError) return "validation_failed";
   if (error instanceof DOMException && error.name === "AbortError") return "cancelled";
   return error instanceof Error ? error.name : "unknown";
 }
@@ -217,12 +244,27 @@ export function assistWithProviderHedge(
       safeCall(() => options.onAttempt?.(attempt));
 
       void runAttempt(state).then(
-        (response) => {
+        async (response) => {
+          let validated: AssistModelResponse;
+          let validationError: unknown;
+          if (options.validateResponse) {
+            try {
+              validated = await Promise.resolve().then(() => options.validateResponse!(response));
+            } catch (error) {
+              validationError = error;
+            }
+          } else {
+            validated = response;
+          }
           state.finished = true;
           pending -= 1;
-          // The observation was emitted in runAttempt's finally. Success is
-          // intentionally handled only after that accounting has completed.
-          settleSuccess(response);
+          if (validationError) {
+            handleFailure(state, validationError);
+          } else {
+            // validated is always assigned in one of the branches above.
+            // @ts-expect-error — flow analysis cannot prove this.
+            settleSuccess(validated);
+          }
         },
         (error: unknown) => {
           state.finished = true;
@@ -253,14 +295,16 @@ export function assistWithProviderHedge(
         scheduleAlternate();
       }
 
-      if (pending === 0) {
-        // No alternate could fit in the remaining budget or acquire a slot.
-        // Preserve the timeout classification when the operation deadline is
-        // exhausted; otherwise return the provider's final transient error.
-        if (error instanceof ProviderAttemptTimeoutError) settleError(error);
-        else if (remainingMs() < MIN_USEFUL_ATTEMPT_WINDOW_MS) settleError(new ProviderTotalTimeoutError());
-        else settleError(error);
-      }
+      // Do not settle while other physical attempts are still running — they
+      // may succeed and override a transient failure.
+      if (pending > 0) return;
+
+      // No alternate could fit in the remaining budget or acquire a slot.
+      // Preserve the timeout classification when the operation deadline is
+      // exhausted; otherwise return the provider's final transient error.
+      if (error instanceof ProviderAttemptTimeoutError) settleError(error);
+      else if (remainingMs() < MIN_USEFUL_ATTEMPT_WINDOW_MS) settleError(new ProviderTotalTimeoutError());
+      else settleError(error);
     };
 
     function onParentAbort() {

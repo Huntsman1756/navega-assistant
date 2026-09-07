@@ -31,6 +31,7 @@ import {
   ProviderAttemptTimeoutError,
   ProviderConcurrencyError,
   ProviderTotalTimeoutError,
+  ProviderValidationFailedError,
   type ProviderAttemptObservation,
 } from "./provider-retry";
 
@@ -168,6 +169,19 @@ export function createApp(
             return true;
           },
           onAttemptComplete: logAttempt,
+          validateResponse: (response) => {
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(response.raw);
+            } catch {
+              throw new ProviderValidationFailedError();
+            }
+            const decision = P0AssistantDecisionSchema.safeParse(parsed);
+            if (!decision.success) {
+              throw new ProviderValidationFailedError();
+            }
+            return response;
+          },
         },
       );
     } catch (err) {
@@ -180,7 +194,7 @@ export function createApp(
         logFinalResult("provider_busy");
         return c.json({ error: "provider_busy" }, 429);
       }
-      if (err instanceof ProviderOutputError) {
+      if (err instanceof ProviderOutputError || err instanceof ProviderValidationFailedError) {
         console.log(`[perf] provider_ms=${elapsedMs} result=invalid_output`);
         logFinalResult("invalid_model_output");
         return c.json({ error: "invalid_model_output", reason: "provider_response" }, 502);
