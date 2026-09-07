@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { DEFAULT_MAX_OUTPUT_TOKENS, OpenAICompatibleProvider } from "./openai-compatible-provider";
+import { DEFAULT_MAX_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS, OpenAICompatibleProvider } from "./openai-compatible-provider";
 import { ProviderConnectionError, ProviderHttpError, ProviderOutputError } from "./errors";
 import type { AssistModelRequest } from "./types";
 
@@ -28,11 +28,12 @@ const request: AssistModelRequest = {
   systemPrompt: "sp",
 };
 
-function makeProvider(): OpenAICompatibleProvider {
+function makeProvider(options: Partial<ConstructorParameters<typeof OpenAICompatibleProvider>[0]> = {}): OpenAICompatibleProvider {
   return new OpenAICompatibleProvider({
     baseUrl: "https://example.invalid/v1",
     apiKey: "test-key",
     model: "test-model",
+    ...options,
   });
 }
 
@@ -61,7 +62,25 @@ describe("OpenAICompatibleProvider AbortSignal support", () => {
     expect(res.raw).toContain("explain");
     expect(seenSignal).toBe(controller.signal);
     expect(seenBody?.max_tokens).toBe(DEFAULT_MAX_OUTPUT_TOKENS);
-    expect(seenBody?.max_tokens).toBeLessThanOrEqual(4096);
+    expect(seenBody?.max_tokens).toBeLessThanOrEqual(MAX_OUTPUT_TOKENS);
+  });
+
+  it.each([512, 768, 1024, MAX_OUTPUT_TOKENS])("sends the bounded output cap %s", async (maxOutputTokens) => {
+    let seenMaxTokens: unknown;
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      seenMaxTokens = (JSON.parse(String(init?.body)) as Record<string, unknown>).max_tokens;
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ kind: "explain", message: "Ahora: Pulsa Continuar." }) } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const result = await makeProvider({ maxOutputTokens }).assist(request);
+    expect(seenMaxTokens).toBe(maxOutputTokens);
+    expect(JSON.parse(result.raw)).toMatchObject({ kind: "explain" });
+  });
+
+  it("rejects an output cap above the tested production bound", () => {
+    expect(() => makeProvider({ maxOutputTokens: MAX_OUTPUT_TOKENS + 1 })).toThrow(RangeError);
   });
 
   it("an aborted fetch rejects, and the caller can classify it as provider_timeout", async () => {

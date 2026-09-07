@@ -14,11 +14,11 @@ import {
 describe("parseProviderTimeoutMs (AI_PROVIDER_TIMEOUT_MS)", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("defaults to 15000 when unset or empty", () => {
-    expect(parseProviderTimeoutMs(undefined)).toBe(15000);
+  it("defaults to 8000 when unset or empty", () => {
+    expect(parseProviderTimeoutMs(undefined)).toBe(8000);
     expect(parseProviderTimeoutMs("")).toBe(DEFAULT_PROVIDER_TIMEOUT_MS);
     expect(parseProviderTimeoutMs("   ")).toBe(DEFAULT_PROVIDER_TIMEOUT_MS);
-    expect(DEFAULT_PROVIDER_TIMEOUT_MS).toBe(15000);
+    expect(DEFAULT_PROVIDER_TIMEOUT_MS).toBe(8000);
   });
 
   it("parses a valid configured value", () => {

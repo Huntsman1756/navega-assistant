@@ -209,7 +209,7 @@ describe("POST /v1/assist", () => {
     }
   });
 
-  it("logs [perf] provider_ms with NO question/page/session content", async () => {
+  it("logs bounded retry observability with NO question/page/session content", async () => {
     const logged: string[] = [];
     const spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
       logged.push(args.map(String).join(" "));
@@ -223,6 +223,8 @@ describe("POST /v1/assist", () => {
     }
     const perfLines = logged.filter((l) => l.startsWith("[perf]"));
     expect(perfLines.some((l) => /\[perf\] provider_ms=\d+ result=ok/.test(l))).toBe(true);
+    expect(perfLines.some((l) => /logical_request_id=[0-9a-f-]{36} attempt=1 attempt_ms=\d+ retry_reason=none/.test(l))).toBe(true);
+    expect(perfLines.some((l) => /logical_request_id=[0-9a-f-]{36} total_ms=\d+ final_result=ok/.test(l))).toBe(true);
     for (const line of logged) {
       expect(line).not.toContain("mi duda super privada");
       expect(line).not.toContain("Sign in");

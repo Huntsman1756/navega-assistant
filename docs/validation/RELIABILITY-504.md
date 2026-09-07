@@ -1,4 +1,4 @@
-# Assist reliability closure — post-G1 candidate
+# Assist reliability closure - post-G1 candidate
 
 This evidence applies only to the post-G1 candidate. The frozen
 `v0.0.9-p0-g1-baseline` tag remains immutable and was not used for candidate
@@ -6,9 +6,9 @@ changes.
 
 ## Pre-change baseline
 
-Measured before source changes against real NaN/qwen3.6 with sequential,
-synthetic, protocol-valid fixture snapshots only. No question, DOM, session,
-URL or provider response content was recorded.
+Measured against real NaN/qwen3.6 with sequential, synthetic, protocol-valid
+fixture snapshots only. No question, DOM, session, URL or provider response
+content was recorded.
 
 ```text
 BASELINE_N = 36
@@ -21,82 +21,151 @@ BASELINE_MAX = 8015 ms total
 
 The 5 timeouts terminated at the existing 8000 ms provider cutoff. A first
 150-element large fixture was rejected by Navega's 16000-character protocol
-bound before provider invocation; it was excluded and replaced with a
+bound before provider invocation; it was excluded and replaced by a
 130-element protocol-valid fixture.
 
-## Candidate policy
+## Root cause and upstream decision
+
+The observed failure is the interaction between a real provider latency tail
+and the original single 8000 ms hard cutoff. The baseline evidence shows a
+healthy median but a tail that reaches and exceeds that cutoff. NaN/qwen3.6
+was not treated as the sole root cause.
+
+`docs/UPSTREAM-REUSE.md` records the maintained-solution review:
+
+- OpenAI Node SDK 6.39.0: PATTERN_ONLY. It has useful timeout/retry behavior,
+  but replacing Navega's generic fetch adapter would add migration surface and
+  would not by itself express the required authoritative total budget and
+  fresh per-attempt signals.
+- `p-retry` 8.0.1: REUSE. It is already the narrow maintained dependency that
+  provides bounded retry, backoff/jitter, retry classification hooks,
+  `maxRetryTime`, and `AbortSignal` support.
+- `ai-retry`: PATTERN_ONLY. Its per-attempt deadline/total-budget concept was
+  applied without migrating to the Vercel AI SDK.
+- LiteLLM router patterns: PATTERN_ONLY. No second LiteLLM proxy was added.
+
+No undocumented qwen3.6 reasoning-control parameter is sent.
+
+## Candidate A
+
+Candidate A used the first bounded retry implementation with a 15000 ms
+attempt deadline and 18000 ms total budget. Its output bound was 4096 tokens.
+It was retained as evidence only; it was not the final B allocation.
 
 ```text
-PROVIDER_ATTEMPT_TIMEOUT_MS = 15000
+EXPERIMENT_A_N = 40
+EXPERIMENT_A_TIMEOUTS = 2
+EXPERIMENT_A_TIMEOUT_RATE = 5.0%
+EXPERIMENT_A_RECOVERED_RETRIES = 5
+EXPERIMENT_A_P50 = 4221 ms total
+EXPERIMENT_A_P95 = 17453 ms total
+EXPERIMENT_A_MAX = 18014 ms total
+EXPERIMENT_A_RELEASE_GATE = FAIL
+```
+
+The flaw was that an attempt consuming 15000 ms left only about 3000 ms for a
+meaningful second inference window.
+
+## Output-cap evaluation
+
+All calls below used real NaN/qwen3.6, sequential synthetic fixtures, the same
+structured schema, and a 2-second inter-call pause. `schema_valid` means the
+backend returned HTTP 200 with a valid P0 decision. `invalid_model_output`
+includes JSON/schema failures.
+
+| max_tokens | N | success | schema_valid | invalid_model_output | timeouts | Ahora/Ruta candidates | p50 | p95 | max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 512 | 6 | 3 | 3 | 3 | 0 | 3 | 1502 ms | 4596 ms | 4596 ms |
+| 768 | 6 | 5 | 5 | 1 | 0 | 5 | 1821 ms | 5523 ms | 5523 ms |
+| 1024 | 6 | 5 | 5 | 1 | 0 | 5 | 1320 ms | 13560 ms | 13560 ms |
+| 4096 | 6 | 5 | 5 | 0 | 1 | 5 | 1249 ms | 16382 ms | 16382 ms |
+
+Deterministic tests cover `explain`, `ask_user`, `cannot_help`, and an
+`Ahora:/Ruta` candidate-shaped explanation. The smallest cap with zero observed
+truncation/schema regression was 4096, so the explicit production bound remains
+4096. No reasoning flag was changed.
+
+## Experiment B policy
+
+```text
+PROVIDER_ATTEMPT_TIMEOUT_MS = 8000
 PROVIDER_TOTAL_BUDGET_MS = 18000
-EXTENSION_FAILSAFE_MS = 20000
+RETRY_JITTER = 250-500 ms
+EXTENSION_FAILSAFE_MS = 22000
 MAX_PROVIDER_ATTEMPTS = 2
 MAX_OUTPUT_TOKENS = 4096
 ```
 
-Only connection failures, 408, 409, 429, 5xx and an attempt timeout are
-retryable. Retry-After is used only when it fits the remaining total budget.
-Every attempt receives a fresh AbortController. The extension owns one
-logical operation; it does not add a second automatic retry.
+The total budget is authoritative. Each attempt gets a fresh
+`AbortController`; a retry is not started when the remaining budget cannot
+provide a useful attempt window. Retry-After is honored only when it fits in
+that remaining budget. Only network/connection failures, 408, 409, 429, 5xx,
+and attempt timeouts are retryable. Deterministic client, policy, schema, and
+invalid-output failures are not retried.
 
-The initial 512-token evaluation was not viable for qwen3.6: controlled
-comparisons showed no final assistant content at 512, 768, 1024 and often
-2048 (the response ended with reasoning content and `finish_reason=length`).
-4096 was the smallest tested bound with complete structured JSON and remains
-an explicit finite output cap.
+## Experiment B live burn
 
-## Candidate burn
-
-Required run: approximately 40 sequential real-NaN/qwen3.6 calls using only
-balanced tiny, medium and bounded-large synthetic contexts. Record only
-attempt number, fixture class, provider duration, total duration, HTTP outcome
-and timeout/recovery classification.
+Real NaN/qwen3.6, synthetic fixtures only, one active request, sequential
+requests, balanced tiny/medium/bounded-large contexts, and a 2-second
+inter-call pause. The runner retained only duration/outcome fields and an
+ephemeral local request identifier; it did not retain question, DOM, session,
+URL, model output, or API key data.
 
 ```text
-CANDIDATE_N = 40
-CANDIDATE_TIMEOUTS = 2
-CANDIDATE_TIMEOUT_RATE = 5.0%
-CANDIDATE_RECOVERED_RETRIES = 5
-CANDIDATE_RETRY_RECOVERY_RATE = 12.5% (5/40)
-CANDIDATE_FINAL_FAILURES = 2
-CANDIDATE_P50 = 4221 ms total
-CANDIDATE_P95 = 17453 ms total
-CANDIDATE_MAX = 18014 ms total
+EXPERIMENT_B_N = 60
+FIRST_ATTEMPT_TIMEOUTS = 13
+RETRY_ATTEMPTS = 13
+RECOVERED_RETRIES = 11
+FINAL_TIMEOUTS = 2
+OTHER_FAILURES = 0
+INVALID_MODEL_OUTPUT = 0
+EXPERIMENT_B_TIMEOUT_RATE = 3.3%
+EXPERIMENT_B_P50 = 1361 ms total
+EXPERIMENT_B_P95 = 13891 ms total
+EXPERIMENT_B_MAX = 16492 ms total
+ATTEMPT_P50 = 1323 ms
+ATTEMPT_P95 = 8010 ms
 USER_VISIBLE_PROVIDER_TIMEOUTS = 2
 RELEASE_GATE = FAIL
 ```
 
-The final selected candidate run used 40 sequential calls, balanced across
-the three fixture classes, with a 2000 ms inter-call pause. It returned 38
-HTTP 200 responses, 2 final HTTP 504 timeouts, and no other final failures;
-5 requests recovered on their internal second attempt. The two 504s remain
-user-visible failures, so the primary release gate is **not passed**.
+Experiment B materially reduced ordinary latency versus Candidate A and
+recovered 11 of 13 first-attempt timeouts, but it did not meet the mandatory
+zero-user-visible-timeout gate. No third timeout-tuning loop was run.
 
-The following bounded experiments were also run before selecting the 15000 /
-18000 allocation:
+## Single fallback-model experiment
 
-| Allocation | N | Timeouts | Recovered | Final failures | P50 | P95 | Max |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 8000 / 17000 | 40 | 3 | 1 | 5 | 682 ms | 16144 ms | 16226 ms |
-| 12000 / 18000 | 10 | 1 | 0 | 2 | 4142 ms | 18005 ms | 18005 ms |
-| 15000 / 18000 | 12 | 0 | 1 | 0 | 1756 ms | 16900 ms | 16900 ms |
-| 15000 / 18000 | 40 | 2 | 5 | 2 | 4221 ms | 17453 ms | 18014 ms |
-| 18000 / 18000 | 40 | 4 | 0 | 6 | 1867 ms | 18006 ms | 18007 ms |
+Because B failed, exactly one fallback model was evaluated as a controlled
+separate experiment. `gemma4` used the same three fixture classes, questions,
+structured schema, 8000/18000 retry policy, 4096-token bound, and sequential
+2-second spacing. Guidance correctness used a fixed offline rubric matching
+the fixture-specific actionable terms; output text was not recorded.
 
-The 18000 / 18000 run was rejected despite its longer single-attempt
-allocation. Recurrent final timeouts therefore remain an unresolved provider
-reliability gate; they are not justification for another blind timeout
-increase.
+```text
+FALLBACK_MODEL = gemma4
+N = 12
+SCHEMA_VALID = 12
+GUIDANCE_CORRECT = 4
+GUIDANCE_UNCLEAR = 8
+FIRST_ATTEMPT_TIMEOUTS = 1
+RECOVERED_RETRIES = 1
+FINAL_TIMEOUTS = 0
+OTHER_FAILURES = 0
+INVALID_MODEL_OUTPUT = 0
+P50 = 1306 ms total
+P95 = 9383 ms total
+MAX = 9383 ms total
+```
 
-Because the bounded retry/output fix did not produce zero final timeouts, a
-current-model A/B was performed with the same fixtures, prompt and schema:
+`gemma4` was faster and had no final timeout in this small sample, but it was
+not guidance-non-inferior to qwen3.6 (the matched earlier qwen3.6 A/B had
+10/12 guidance-correct results). It was not adopted and no silent model
+failover was implemented.
 
-| Model | N | Success | Timeouts | Guidance correct | Guidance unclear | Invalid output | P50 | P95 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| qwen3.6 | 12 | 11 | 1 | 10 | 1 | 0 | 1938 ms | 18011 ms |
-| deepseek-v4-flash | 12 | 11 | 1 | 4 | 7 | 0 | 5124 ms | 18011 ms |
-| mimo-v2.5 | 12 | 11 | 1 | 4 | 7 | 0 | 6063 ms | 18006 ms |
+## Closure decision
 
-No alternative was demonstrably non-inferior in guidance and materially more
-reliable. qwen3.6 remains the default. The candidate is therefore a bounded
-engineering mitigation, not a release-passing reliability closure.
+The candidate implements the bounded retry/output-cost mitigation and passes
+the deterministic engineering contract, but reliability closure is not a
+release PASS: Experiment B still had 2 user-visible provider timeouts. The
+authorized fallback experiment did not establish a safe non-inferior model.
+Voice live validation and P01-P04 remain separate human gates.

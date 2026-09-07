@@ -3,7 +3,7 @@ import { MockProvider, OpenAICompatibleProvider } from "@guided-web/provider";
 import { OPERATOR_API_PORT } from "@guided-web/protocol";
 
 export const MAX_PROVIDER_ATTEMPTS = 2;
-export const DEFAULT_PROVIDER_TIMEOUT_MS = 15000;
+export const DEFAULT_PROVIDER_TIMEOUT_MS = 8000;
 export const MIN_PROVIDER_TIMEOUT_MS = 1000;
 export const MAX_PROVIDER_TIMEOUT_MS = 30000;
 export const DEFAULT_PROVIDER_TOTAL_BUDGET_MS = 18000;
@@ -13,9 +13,9 @@ export const MAX_PROVIDER_TOTAL_BUDGET_MS = 18000;
 /**
  * Hard deadline for a single provider call. The real-provider measurements
  * (qwen3.6, 20 samples) show p50 ~0.7 s and p95 ~1.7 s; the problem is the
- * heavy tail (observed max 11.5 s). The 15 s setting is a measured candidate
- * allocation: it covers the observed tail while one bounded retry remains
- * available inside the separate 18 s total-operation budget below.
+ * heavy tail (observed max 11.5 s). The experiment-B allocation deliberately
+ * gives each of two attempts a normal 8000 ms window inside the separate
+ * 18000 ms total-operation budget below.
  */
 export const DEFAULT_NAN_BASE_URL = "https://api.nan.builders";
 
@@ -69,7 +69,7 @@ export interface ApiConfig {
   provider: AIProvider;
   providerName: string;
   model?: string;
-  /** Hard timeout (ms) on each provider attempt. Default 15000. */
+  /** Hard timeout (ms) on each provider attempt. Default 8000. */
   providerTimeoutMs: number;
   /** Hard timeout (ms) for the complete assist operation. Default 18000. */
   providerTotalTimeoutMs: number;

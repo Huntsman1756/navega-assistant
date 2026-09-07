@@ -576,7 +576,7 @@ Evaluated 2026-09-06 for the post-G1 candidate only. The frozen
 - **Decision:** REUSE. `p-retry@8.0.1` is a direct API dependency. Navega's
   adapter in `apps/api/src/provider-retry.ts` supplies the product-specific
   policy: exactly two attempts, explicit retryable status/error classes,
-  bounded `Retry-After`, fresh per-attempt controllers and a 17-second total
+  bounded `Retry-After`, fresh per-attempt controllers and an 18-second total
   budget. No upstream source was copied.
 
 ### ai-retry — PATTERN_ONLY

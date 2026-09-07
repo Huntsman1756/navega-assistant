@@ -146,9 +146,9 @@ uses one bounded retry for transient provider failures; it does not stream.
   applied by the backend and passed to `provider.assist(request, signal)`. The
   `openai-compatible` provider forwards the signal to `fetch`, so a hung
   request is actually cancelled (socket released).
-- Configured via `AI_PROVIDER_TIMEOUT_MS`, **default 15000 ms**, defensively
+- Configured via `AI_PROVIDER_TIMEOUT_MS`, **default 8000 ms**, defensively
   validated: it must be an integer between 1000 and 30000; anything else logs a
-  warning and falls back to 15000 (a bad `.env` can never disable fail-fast).
+  warning and falls back to 8000 (a bad `.env` can never disable fail-fast).
 - The complete operation has a separate `AI_PROVIDER_TOTAL_TIMEOUT_MS` budget
   (default 18000 ms, maximum 18000 ms) and at most `MAX_PROVIDER_ATTEMPTS = 2`.
   The total budget is authoritative over per-attempt deadlines and backoff.
@@ -163,7 +163,7 @@ uses one bounded retry for transient provider failures; it does not stream.
 ### Extension fail-safe deadline (browser side)
 
 - The service worker wraps the extension → localhost request with its own
-  deadline: `BACKEND_REQUEST_TIMEOUT_MS = 20000`. It is deliberately LONGER
+  deadline: `BACKEND_REQUEST_TIMEOUT_MS = 22000`. It is deliberately LONGER
   than the complete provider budget (18000) so the backend normally wins the
   race and returns a precise result; the browser deadline only fires if the
   backend itself is hung or unreachable.
@@ -181,7 +181,7 @@ uses one bounded retry for transient provider failures; it does not stream.
 | `provider_timeout`    | backend             | 504  | Provider exceeded its hard deadline    |
 | `provider_unavailable`| backend             | 502  | Provider call failed (raw error NEVER forwarded) |
 | `invalid_model_output`| backend             | 502  | Output was not JSON / failed the schema |
-| `backend_timeout`     | extension (SW)      | —    | Local backend did not answer within 20 s |
+| `backend_timeout`     | extension (SW)      | —    | Local backend did not answer within 22 s |
 | `network`             | extension (SW)      | —    | Local backend unreachable              |
 | `backend_error`       | extension (SW)      | —    | Unexpected backend shape/status        |
 

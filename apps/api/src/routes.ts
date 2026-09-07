@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { randomUUID } from "node:crypto";
 
 export const MAX_BODY_BYTES = 512 * 1024;
 export const MAX_PROVIDER_CALLS = 2;
@@ -29,6 +30,7 @@ import {
   ProviderAttemptTimeoutError,
   ProviderTotalTimeoutError,
   RETRY_MAX_DELAY_MS,
+  type ProviderAttemptObservation,
 } from "./provider-retry";
 
 export { DEFAULT_PROVIDER_TIMEOUT_MS };
@@ -119,9 +121,23 @@ export function createApp(
 
     if (activeCalls >= MAX_PROVIDER_CALLS) return c.json({ error: "provider_busy" }, 429);
     let response: Awaited<ReturnType<typeof assistWithProviderRetry>>;
+    const logicalRequestId = randomUUID();
     // Local-only perf instrumentation. Duration + outcome ONLY: never the
     // question, the page content, the session, URLs or any provider detail.
     const tProvider = performance.now();
+    const logFinalResult = (finalResult: string) => {
+      console.log(
+        `[perf] logical_request_id=${logicalRequestId} `
+        + `total_ms=${Math.round(performance.now() - tProvider)} final_result=${finalResult}`,
+      );
+    };
+    const logAttempt = (observation: ProviderAttemptObservation) => {
+      console.log(
+        `[perf] logical_request_id=${logicalRequestId} `
+        + `attempt=${observation.attempt} attempt_ms=${observation.attemptMs} `
+        + `retry_reason=${observation.retryReason}`,
+      );
+    };
     activeCalls += 1;
     try {
       response = await assistWithProviderRetry(
@@ -138,14 +154,19 @@ export function createApp(
           totalTimeoutMs: providerTotalTimeoutMs,
           signal: c.req.raw.signal,
           onAttempt: opts?.onProviderAttempt,
+          onAttemptComplete: logAttempt,
         },
       );
     } catch (err) {
       const elapsedMs = Math.round(performance.now() - tProvider);
       activeCalls -= 1;
-      if (c.req.raw.signal.aborted) return new Response(null, { status: 499 });
+      if (c.req.raw.signal.aborted) {
+        logFinalResult("cancelled");
+        return new Response(null, { status: 499 });
+      }
       if (err instanceof ProviderOutputError) {
         console.log(`[perf] provider_ms=${elapsedMs} result=invalid_output`);
+        logFinalResult("invalid_model_output");
         return c.json({ error: "invalid_model_output", reason: "provider_response" }, 502);
       }
       const timedOut =
@@ -154,12 +175,14 @@ export function createApp(
         (elapsedMs >= providerTotalTimeoutMs && isRetryableProviderError(err));
       if (timedOut) {
         console.log(`[perf] provider_ms=${elapsedMs} result=timeout`);
+        logFinalResult("provider_timeout");
         return c.json({ error: "provider_timeout" }, 504);
       }
       // Log ONLY the error class name (never the message: provider error text
       // can echo request content). The extension gets a stable code only.
       const kind = err instanceof Error ? err.name : "unknown";
       console.log(`[perf] provider_ms=${elapsedMs} result=error error_kind=${kind}`);
+      logFinalResult("provider_unavailable");
       return c.json({ error: "provider_unavailable" }, 502);
     }
     activeCalls -= 1;
@@ -169,11 +192,13 @@ export function createApp(
     try {
       rawDecision = JSON.parse(response.raw);
     } catch {
+      logFinalResult("invalid_model_output");
       return c.json({ error: "invalid_model_output", reason: "not_json" }, 502);
     }
 
     const decisionParsed = P0AssistantDecisionSchema.safeParse(rawDecision);
     if (!decisionParsed.success) {
+      logFinalResult("invalid_model_output");
       return c.json({ error: "invalid_model_output", reason: "schema" }, 502);
     }
     const decision = decisionParsed.data;
@@ -192,6 +217,7 @@ export function createApp(
         ? { ...decision, message }
         : { ...decision, message };
 
+    logFinalResult("ok");
     return c.json({
       protocolVersion: PROTOCOL_VERSION,
       decision: out,

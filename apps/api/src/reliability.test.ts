@@ -67,7 +67,7 @@ describe("post-G1 assist reliability contract", () => {
     );
     const result = await post(createApp(testProvider.provider, "test", "test-model", {
       providerTimeoutMs: 25,
-      providerTotalTimeoutMs: 400,
+      providerTotalTimeoutMs: 600,
     }));
     expect(result.status).toBe(200);
     expect(result.json.decision.kind).toBe("explain");
@@ -98,7 +98,7 @@ describe("post-G1 assist reliability contract", () => {
     expect(testProvider.attempts()).toBe(2);
   });
 
-  it.each([400, 401])("does not retry HTTP %s", async (status) => {
+  it.each([400, 401, 403, 404, 422])("does not retry HTTP %s", async (status) => {
     const testProvider = sequenceProvider(() => {
       throw new ProviderHttpError(status);
     });
@@ -131,20 +131,25 @@ describe("post-G1 assist reliability contract", () => {
   });
 
   it("returns one final provider_timeout after two timed-out attempts", async () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
     const testProvider = sequenceProvider((_attempt, signal) => abortableTimeout(signal));
-    const started = performance.now();
-    const result = await post(createApp(testProvider.provider, "test", "test-model", {
-      providerTimeoutMs: 25,
-      providerTotalTimeoutMs: 400,
-    }));
-    expect(result.status).toBe(504);
-    expect(result.json.error).toBe("provider_timeout");
-    expect(testProvider.attempts()).toBe(2);
-    expect(performance.now() - started).toBeLessThan(350);
+    try {
+      const started = performance.now();
+      const result = await post(createApp(testProvider.provider, "test", "test-model", {
+        providerTimeoutMs: 25,
+        providerTotalTimeoutMs: 400,
+      }));
+      expect(result.status).toBe(504);
+      expect(result.json.error).toBe("provider_timeout");
+      expect(testProvider.attempts()).toBe(2);
+      expect(performance.now() - started).toBeLessThan(350);
+    } finally {
+      random.mockRestore();
+    }
   });
 
   it.each([
-    { kind: "explain", message: "Pulsa continuar." },
+    { kind: "explain", message: "Ahora: Pulsa continuar.\nRuta:\n1. Continuar" },
     { kind: "ask_user", message: "¿Qué quieres hacer?" },
     { kind: "cannot_help", reason: "insufficient_context", message: "No puedo verlo todavía." },
   ])("accepts representative bounded structured output: $kind", async (decision) => {

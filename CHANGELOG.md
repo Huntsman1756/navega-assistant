@@ -7,16 +7,20 @@ adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased] — post-G1 reliability closure (engineering candidate)
 
 No model replacement, undocumented reasoning flag, context-budget change or
-telemetry was added. The frozen G1 runtime remains unchanged.
+remote telemetry/persistence was added. Local duration/outcome diagnostics are
+ephemeral and contain no request or provider content. The frozen G1 runtime
+remains unchanged.
 
 ### Added
 - **Bounded provider retry.** `p-retry@8.0.1` drives exactly two maximum
   provider attempts. Only connection failures, 408, 409, 429, 5xx and an
   attempt timeout are retryable. Retry-After is honored only inside the total
   operation budget.
-- **Separate total provider budget.** Each attempt has a measured 15000 ms
-  candidate deadline; the default complete-assist budget is 18000 ms and is authoritative
-  over backoff and retries. Every attempt receives a fresh AbortController.
+- **Separate total provider budget.** Experiment B gives each attempt an 8000 ms
+  deadline; the default complete-assist budget is 18000 ms and is authoritative
+  over the bounded 250–500 ms jitter and retries. Every attempt receives a fresh
+  AbortController, and a retry is skipped when the remaining budget cannot provide
+  a useful attempt window.
 - **Bounded provider output.** OpenAI-compatible requests set
   `max_tokens: 4096`. Controlled NaN/qwen3.6 shape checks showed that smaller
   budgets could end with `finish_reason=length` before final assistant content;
@@ -25,7 +29,7 @@ telemetry was added. The frozen G1 runtime remains unchanged.
   `reasoning_config: {}` and qwen3.6 sampling values, but neither A/B was
   reproducibly better, so no provider-specific reasoning or sampling field
   ships.
-- **Cancellation-safe extension flow.** The extension fail-safe is 20000 ms,
+- **Cancellation-safe extension flow.** The extension fail-safe is 22000 ms,
   longer than the default backend total budget. Reset/cancel invalidates the
   old operation, cancels its backend request and prevents late answers from
   changing the current session.
@@ -39,9 +43,13 @@ telemetry was added. The frozen G1 runtime remains unchanged.
   and candidate-burn fields.
 
 ### Validation status
-- Deterministic engineering gates pass, but the required live qwen3.6 burn
-  still observed 2 final provider timeouts in 40 calls. The reliability release
-  gate therefore remains **FAIL**; this is not a project-closed release.
+- Deterministic engineering gates pass, but the Experiment B live qwen3.6 burn
+  observed 2 final provider timeouts in 60 calls. The reliability release gate
+  therefore remains **FAIL**; this is not a project-closed release.
+- The one authorized fallback experiment (`gemma4`, 12 calls) had zero final
+  timeouts and zero invalid outputs, but only 4/12 guidance-correct results
+  versus qwen3.6's 10/12 in the matched earlier A/B. It is not a
+  non-inferior replacement and was not adopted.
 - The real-Chrome/real-NaN voice smoke was not observed in this run. Both live
   voice gates remain **PENDING**; the engineering voice gates remain PASS.
 

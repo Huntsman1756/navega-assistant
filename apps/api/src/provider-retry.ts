@@ -2,12 +2,14 @@ import pRetry from "p-retry";
 import {
   ProviderConnectionError,
   ProviderHttpError,
+  ProviderOutputError,
 } from "@guided-web/provider";
 import type { AssistModelRequest, AssistModelResponse, AIProvider } from "@guided-web/provider";
 import { MAX_PROVIDER_ATTEMPTS } from "./config";
 
-export const RETRY_MIN_DELAY_MS = 100;
+export const RETRY_MIN_DELAY_MS = 250;
 export const RETRY_MAX_DELAY_MS = 500;
+export const MIN_USEFUL_RETRY_WINDOW_MS = 500;
 
 export class ProviderAttemptTimeoutError extends Error {
   constructor(readonly timeoutMs: number) {
@@ -23,12 +25,21 @@ export class ProviderTotalTimeoutError extends Error {
   }
 }
 
+export interface ProviderAttemptObservation {
+  attempt: number;
+  attemptMs: number;
+  /** Stable local classification only; never includes provider text. */
+  retryReason: string;
+}
+
 export interface ProviderRetryOptions {
   attemptTimeoutMs: number;
   totalTimeoutMs: number;
   signal?: AbortSignal;
   /** Local validation hook; it receives no request or provider content. */
   onAttempt?: (attempt: number) => void;
+  /** Local duration/outcome hook; it receives no request or provider content. */
+  onAttemptComplete?: (observation: ProviderAttemptObservation) => void;
 }
 
 interface CombinedSignal {
@@ -126,6 +137,28 @@ function networkLike(error: unknown): boolean {
   return /network|fetch failed|connection|socket|econn|enotfound|dns|unreachable|reset/i.test(`${error.message} ${cause}`);
 }
 
+function retryReasonOf(error: unknown): string {
+  if (error instanceof ProviderAttemptTimeoutError) return "attempt_timeout";
+  if (error instanceof ProviderTotalTimeoutError) return "total_timeout";
+  if (error instanceof ProviderOutputError) return "invalid_model_output";
+  if (networkLike(error)) return "network";
+  const status = statusOf(error);
+  if (status !== undefined) return `http_${status}`;
+  return "error";
+}
+
+function observeAttempt(
+  callback: ProviderRetryOptions["onAttemptComplete"],
+  observation: ProviderAttemptObservation,
+): void {
+  // Instrumentation must never change the provider result or retry policy.
+  try {
+    callback?.(observation);
+  } catch {
+    // Deliberately ignore local logging/test-hook failures.
+  }
+}
+
 export function isRetryableProviderError(error: unknown): boolean {
   if (error instanceof ProviderAttemptTimeoutError || networkLike(error)) return true;
   const status = statusOf(error);
@@ -150,22 +183,37 @@ export async function assistWithProviderRetry(
     async (attempt) => {
       const remaining = remainingMs(startedAt, options.totalTimeoutMs);
       if (remaining <= 0) throw new ProviderTotalTimeoutError(options.totalTimeoutMs);
+      if (attempt > 1 && remaining < Math.min(options.attemptTimeoutMs, MIN_USEFUL_RETRY_WINDOW_MS)) {
+        throw new ProviderTotalTimeoutError(options.totalTimeoutMs);
+      }
 
       options.onAttempt?.(attempt);
+      const attemptStartedAt = performance.now();
       const attemptController = new AbortController();
       const combined = combineSignals(options.signal, attemptController.signal);
       try {
         const work = Promise.resolve().then(() => provider.assist(request, combined.signal));
-        return await withAttemptTimeout(
+        const response = await withAttemptTimeout(
           work,
           Math.min(options.attemptTimeoutMs, remaining),
           attemptController,
         );
+        observeAttempt(options.onAttemptComplete, {
+          attempt,
+          attemptMs: Math.round(performance.now() - attemptStartedAt),
+          retryReason: "none",
+        });
+        return response;
       } catch (error) {
-        if (networkLike(error) && !(error instanceof ProviderConnectionError)) {
-          throw new ProviderConnectionError(error);
-        }
-        throw error;
+        const normalized = networkLike(error) && !(error instanceof ProviderConnectionError)
+          ? new ProviderConnectionError(error)
+          : error;
+        observeAttempt(options.onAttemptComplete, {
+          attempt,
+          attemptMs: Math.round(performance.now() - attemptStartedAt),
+          retryReason: retryReasonOf(normalized),
+        });
+        throw normalized;
       } finally {
         combined.cleanup();
       }
@@ -184,7 +232,14 @@ export async function assistWithProviderRetry(
 
         const requestedDelay = retryAfterMs(error);
         const delay = requestedDelay ?? retryDelay;
-        if (!Number.isFinite(delay) || delay < 0 || delay >= remainingMs(startedAt, options.totalTimeoutMs)) return;
+        const remaining = remainingMs(startedAt, options.totalTimeoutMs);
+        const usefulWindow = Math.min(options.attemptTimeoutMs, MIN_USEFUL_RETRY_WINDOW_MS);
+        if (
+          !Number.isFinite(delay)
+          || delay < 0
+          || delay >= remaining
+          || remaining - delay < usefulWindow
+        ) return;
 
         retryAllowed = true;
         if (requestedDelay !== undefined && requestedDelay > retryDelay) {
@@ -194,7 +249,8 @@ export async function assistWithProviderRetry(
       shouldRetry: ({ error }) =>
         retryAllowed
         && isRetryableProviderError(error)
-        && remainingMs(startedAt, options.totalTimeoutMs) > 0,
+        && remainingMs(startedAt, options.totalTimeoutMs)
+          >= Math.min(options.attemptTimeoutMs, MIN_USEFUL_RETRY_WINDOW_MS),
     },
   );
 }

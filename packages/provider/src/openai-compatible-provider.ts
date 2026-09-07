@@ -4,7 +4,8 @@ import { ProviderConnectionError, ProviderHttpError, ProviderOutputError } from 
 // qwen3.6 needs more than the initial 512-token trial to finish its reasoning
 // and emit the small structured answer. 4096 is the smallest tested bound
 // that leaves enough reasoning headroom for a complete response.
-export const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
+export const MAX_OUTPUT_TOKENS = 4096;
+export const DEFAULT_MAX_OUTPUT_TOKENS = MAX_OUTPUT_TOKENS;
 
 export interface OpenAICompatibleOptions {
   /** Base URL of an OpenAI-compatible API, e.g. https://api.nan.builders/v1 */
@@ -13,6 +14,8 @@ export interface OpenAICompatibleOptions {
   model: string;
   /** Request JSON response format when the endpoint supports it. Default true. */
   jsonMode?: boolean;
+  /** Internal experiment hook; production default remains MAX_OUTPUT_TOKENS. */
+  maxOutputTokens?: number;
 }
 
 /**
@@ -24,7 +27,12 @@ export interface OpenAICompatibleOptions {
 export class OpenAICompatibleProvider implements AIProvider {
   readonly name = "openai-compatible";
 
-  constructor(private readonly opts: OpenAICompatibleOptions) {}
+  constructor(private readonly opts: OpenAICompatibleOptions) {
+    const maxOutputTokens = opts.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
+    if (!Number.isInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > MAX_OUTPUT_TOKENS) {
+      throw new RangeError(`maxOutputTokens must be an integer between 1 and ${MAX_OUTPUT_TOKENS}`);
+    }
+  }
 
   async assist(request: AssistModelRequest, signal?: AbortSignal): Promise<AssistModelResponse> {
     const baseUrl = this.opts.baseUrl.replace(/\/+$/, "");
@@ -35,7 +43,7 @@ export class OpenAICompatibleProvider implements AIProvider {
         { role: "user", content: this.buildUserContent(request) },
       ],
       temperature: 0,
-      max_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
+      max_tokens: this.opts.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
     };
 
     if (this.opts.jsonMode !== false) {

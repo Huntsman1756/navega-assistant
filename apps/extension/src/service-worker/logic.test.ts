@@ -88,6 +88,7 @@ describe("backend fail-safe deadline (browser-side)", () => {
 
   it("the browser deadline is strictly longer than the complete backend budget", () => {
     expect(BACKEND_REQUEST_TIMEOUT_MS).toBeGreaterThan(18000);
+    expect(BACKEND_REQUEST_TIMEOUT_MS).toBe(22000);
   });
 
   it("passes an AbortSignal to the backend fetch", async () => {

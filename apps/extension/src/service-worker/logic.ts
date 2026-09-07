@@ -13,11 +13,11 @@ import {
 
 /**
  * Fail-safe deadline for the extension -> localhost backend request. It is
- * longer than the backend's complete assist budget (default 18000 ms), which
- * includes one provider retry. The 3000 ms margin covers response
+ * longer than the backend's complete assist budget (18000 ms), which includes
+ * one provider retry. The 4000 ms margin covers response
  * serialization and message passing. The extension does not retry itself.
  */
-export const BACKEND_REQUEST_TIMEOUT_MS = 20000;
+export const BACKEND_REQUEST_TIMEOUT_MS = 22000;
 
 export function buildAssistPayload(
   context: PageContext,
