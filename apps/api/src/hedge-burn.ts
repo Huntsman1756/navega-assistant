@@ -123,6 +123,9 @@ try {
       invalidOutput: false,
       otherFailure: false,
       observations: [],
+      invalidA: 0,
+      invalidB: 0,
+      recovered: false,
     };
     const response = await app.request("/v1/assist", {
       method: "POST",
