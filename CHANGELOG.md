@@ -41,6 +41,21 @@ remains unchanged.
   sent. See `docs/validation/RELIABILITY-504.md` for the pre-change baseline
   and candidate-burn fields.
 
+### Fixed
+- **Loopback request boundary.** Browser-originated provider requests now
+  require a Chromium extension origin, and each endpoint enforces its expected
+  JSON or multipart media type before parsing or invoking an upstream provider.
+  This prevents arbitrary websites from spending the operator's configured
+  provider quota through cross-origin form/simple requests.
+- Stopping or cleaning up voice playback now aborts an in-flight speech
+  request, preventing delayed audio from starting after the user pressed
+  **Detener** or hid the panel.
+- Removed a timer-order-dependent hedge assertion that could fail after the
+  alternate attempt had already completed; the test now checks only the
+  externally meaningful result and bounded physical call count.
+- Upgraded Vitest across the workspace from 3.2.x to 4.1.11, which includes
+  the upstream fix for `GHSA-82fw-gwwq-j7x9` in `@vitest/mocker`.
+
 ### Validation status
 - Experiment B remains retained as evidence: 2 final provider timeouts in 60
   calls. Experiment C (bounded hedge, 100 logical calls) improved tail latency

@@ -62,6 +62,27 @@ type SpeechRequestResult =
   | { ok: true; text: string; voice: string }
   | { ok: false; reason: "invalid_request" | "invalid_voice" | "text_too_long" };
 
+/**
+ * The API is a loopback companion for the browser extension, not a public web
+ * API. Browser requests without an Origin remain valid for local CLI/tests,
+ * while browser-originated POSTs are accepted only from an extension page.
+ * This prevents arbitrary websites from spending the operator's provider
+ * quota through simple cross-origin requests to localhost.
+ */
+function isAllowedBrowserOrigin(origin: string | undefined): boolean {
+  if (origin === undefined) return true;
+  try {
+    const parsed = new URL(origin);
+    return parsed.protocol === "chrome-extension:" && parsed.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function hasMediaType(contentType: string | undefined, expected: string): boolean {
+  return contentType?.split(";", 1)[0]?.trim().toLowerCase() === expected;
+}
+
 function parseSpeechRequest(body: unknown): SpeechRequestResult {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return { ok: false, reason: "invalid_request" };
@@ -111,6 +132,30 @@ export function createApp(
 
   let activeCalls = 0;
   app.get("/health", (c) => c.json({ ok: true, provider: providerName, model }));
+  app.use("/v1/*", async (c, next) => {
+    if (!isAllowedBrowserOrigin(c.req.header("Origin"))) {
+      return c.json({ error: "forbidden_origin" }, 403);
+    }
+    await next();
+  });
+  app.use("/v1/assist", async (c, next) => {
+    if (!hasMediaType(c.req.header("Content-Type"), "application/json")) {
+      return c.json({ error: "unsupported_media_type" }, 415);
+    }
+    await next();
+  });
+  app.use("/v1/speech", async (c, next) => {
+    if (!hasMediaType(c.req.header("Content-Type"), "application/json")) {
+      return c.json({ error: "unsupported_media_type" }, 415);
+    }
+    await next();
+  });
+  app.use("/v1/transcribe", async (c, next) => {
+    if (!hasMediaType(c.req.header("Content-Type"), "multipart/form-data")) {
+      return c.json({ error: "unsupported_media_type" }, 415);
+    }
+    await next();
+  });
   app.use("/v1/assist", bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json({ error: "body_too_large" }, 413) }));
   app.use("/v1/transcribe", bodyLimit({ maxSize: MAX_TRANSCRIBE_BODY_BYTES, onError: (c) => c.json({ error: "audio_too_large" }, 413) }));
 

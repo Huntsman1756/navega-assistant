@@ -69,10 +69,10 @@ describe("service worker assist logic (stateless, P0-14)", () => {
     expect(second).toMatchObject({ ok: true });
   });
 
-  it("returns ok:false (and never a stale/valid-looking answer) on backend failure", async () => {
+  it("identifies an unavailable local backend without inventing an answer", async () => {
     const fetchImpl = () => Promise.reject(new Error("network"));
     const res = await requestAssist(`http://localhost:${OPERATOR_API_PORT}`, context("z"), "q", emptySession(), fetchImpl);
-    expect(res).toEqual({ type: "GWA_ASSIST_RESULT", ok: false, error: "network" });
+    expect(res).toEqual({ type: "GWA_ASSIST_RESULT", ok: false, error: "backend_offline" });
   });
 
   it("builds a mode-locked DOM_ONLY payload carrying the session", () => {
@@ -136,13 +136,25 @@ describe("backend fail-safe deadline (browser-side)", () => {
     expect(res).toEqual({ type: "GWA_ASSIST_RESULT", ok: false, error: "provider_timeout" });
   });
 
-  it("an ordinary connection failure remains a network error (not a timeout)", async () => {
+  it("an ordinary remote connection failure remains a network error (not a timeout)", async () => {
     const fetchImpl = async () => {
       throw new TypeError("fetch failed");
     };
-    const res = await requestAssist(`http://localhost:${OPERATOR_API_PORT}`, context("n"), "q", emptySession(), fetchImpl);
+    const res = await requestAssist("https://assistant.example", context("n"), "q", emptySession(), fetchImpl);
     expect(res).toEqual({ type: "GWA_ASSIST_RESULT", ok: false, error: "network" });
   });
+
+  it.each(["http://localhost:8787", "http://127.0.0.1:8787", "http://[::1]:8787"])(
+    "classifies loopback connection failure as backend_offline for %s",
+    async (backendUrl) => {
+      const fetchImpl = async () => {
+        throw new TypeError("fetch failed");
+      };
+      await expect(
+        requestAssist(backendUrl, context("local"), "q", emptySession(), fetchImpl),
+      ).resolves.toEqual({ type: "GWA_ASSIST_RESULT", ok: false, error: "backend_offline" });
+    },
+  );
 
   it("a late response after the deadline can never reach the caller", async () => {
     // The fetch rejects at the deadline; a hypothetical late backend "answer"

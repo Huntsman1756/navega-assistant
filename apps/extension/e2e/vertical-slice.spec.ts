@@ -207,6 +207,30 @@ test.describe("vertical slice (browser extract -> live backend)", () => {
   });
 });
 
+test.describe("loopback API browser boundary", () => {
+  test("rejects a cross-origin form POST from an ordinary webpage", async ({ page }) => {
+    await page.goto("/login.html");
+    const navigation = page.waitForNavigation();
+
+    await page.evaluate((endpoint) => {
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = endpoint;
+      form.enctype = "text/plain";
+      const field = document.createElement("input");
+      field.name = "payload";
+      field.value = JSON.stringify({ text: "consume provider quota", voice: "ef_dora" });
+      form.append(field);
+      document.body.append(form);
+      form.submit();
+    }, `${API_URL}/v1/speech`);
+
+    const response = await navigation;
+    expect(response?.status()).toBe(403);
+    expect(await page.textContent("body")).toContain("forbidden_origin");
+  });
+});
+
 test.describe("help session vertical (mock provider, deterministic)", () => {
   test("second request sees the previous help context and a fresh snapshot", async ({ page }) => {
     // First request: no history yet.

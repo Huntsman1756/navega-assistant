@@ -16,6 +16,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { VOICE_TRANSCRIPT_TTL_MS, isStale, trySendMessage, storeTranscriptFallback, voiceErrorMessage } from "../shared/voice-messages";
 import type { VoiceTranscriptMessage } from "../shared/voice-messages";
 import { getBackendUrl } from "../shared/backend-url";
+import { initVoiceController } from "./voice-control";
 
 /* ------------------------------------------------------------------ */
 /*  Chrome mocks                                                      */
@@ -217,5 +218,71 @@ describe("voiceErrorMessage", () => {
   it("falls back to the generic retry messages for other failures", () => {
     expect(voiceErrorMessage("speech", 500)).toMatch(/No se pudo generar/i);
     expect(voiceErrorMessage("transcribe", 500)).toMatch(/No se pudo transcribir/i);
+  });
+});
+
+describe("voice controls", () => {
+  it("shows TTS failures in the live status and only updates the response button", async () => {
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ error: "provider_unavailable" }), {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sttBtn = document.createElement("button");
+    sttBtn.textContent = "Hablar";
+    const responseBtn = document.createElement("button");
+    responseBtn.textContent = "Escuchar";
+    const status = document.createElement("div");
+    const input = document.createElement("textarea");
+    const voice = initVoiceController({ sttBtn, status, input });
+
+    await voice.playAnswer("Lee esta respuesta", responseBtn);
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(status.textContent).toMatch(/No se pudo generar/i);
+    expect(responseBtn.textContent).toBe("Escuchar");
+    expect(responseBtn.classList.contains("playing")).toBe(false);
+    expect(sttBtn.textContent).toBe("Hablar");
+    vi.stubGlobal("fetch", originalFetch);
+  });
+
+  it("aborts pending TTS generation when the user stops playback", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalAudio = globalThis.Audio;
+    let requestSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        requestSignal = init?.signal ?? undefined;
+        requestSignal?.addEventListener("abort", () => reject(requestSignal?.reason), { once: true });
+      }),
+    );
+    const audioMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("Audio", audioMock);
+
+    const sttBtn = document.createElement("button");
+    const responseBtn = document.createElement("button");
+    responseBtn.textContent = "Escuchar";
+    const status = document.createElement("div");
+    const input = document.createElement("textarea");
+    const voice = initVoiceController({ sttBtn, status, input });
+
+    const playback = voice.playAnswer("No debe reproducirse", responseBtn);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    voice.stopPlaying();
+    await playback;
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(audioMock).not.toHaveBeenCalled();
+    expect(voice.isPlaying()).toBe(false);
+    expect(status.textContent).toBe("");
+    expect(responseBtn.textContent).toBe("Escuchar");
+
+    vi.stubGlobal("fetch", originalFetch);
+    vi.stubGlobal("Audio", originalAudio);
   });
 });

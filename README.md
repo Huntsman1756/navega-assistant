@@ -184,6 +184,8 @@ backend configuration.
 - Page content is treated as untrusted input, and page/session text can never
   inject conversation roles or override system policy.
 - Strict, versioned schemas (`additionalProperties: false`, `PROTOCOL_VERSION 3`).
+- The loopback API rejects browser POSTs outside the extension origin and
+  enforces JSON/multipart media types before invoking a provider.
 - Structured output is not a complete safety boundary; an instruction-safety
   layer blocks/replaces requests for secrets.
 - No `click`/`type`/`submit`/`executeJavaScript` primitives exist.
