@@ -41,6 +41,16 @@ remains unchanged.
   sent. See `docs/validation/RELIABILITY-504.md` for the pre-change baseline
   and candidate-burn fields.
 
+### Fixed
+- **Loopback request boundary.** Browser-originated provider requests now
+  require a Chromium extension origin, and each endpoint enforces its expected
+  JSON or multipart media type before parsing or invoking an upstream provider.
+  This prevents arbitrary websites from spending the operator's configured
+  provider quota through cross-origin form/simple requests.
+- Removed a timer-order-dependent hedge assertion that could fail after the
+  alternate attempt had already completed; the test now checks only the
+  externally meaningful result and bounded physical call count.
+
 ### Validation status
 - Experiment B remains retained as evidence: 2 final provider timeouts in 60
   calls. Experiment C (bounded hedge, 100 logical calls) improved tail latency

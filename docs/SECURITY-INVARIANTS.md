@@ -31,6 +31,7 @@ phase in which it is fully implemented.
 | P0-21 | The system MUST distinguish escalation prepared / shared / delivery confirmed / contact-response-received and MUST NOT imply a human is reviewing unless actually known. | P2 |
 | P0-22 | The current help session is ephemeral, bounded (≤ ~10 turns), never stores page snapshots as history, never retains secret input values, and is NOT a browsing history or behavioural profile. | P0 |
 | P0-23 | Conversation history must never bypass the sanitizer or secret policy, and page/injection content must never be able to inject arbitrary conversation roles or become a system instruction. | P0 |
+| P0-24 | Browser-originated requests to the loopback provider API must come from a Chromium extension origin and use the endpoint's exact media type; arbitrary websites must not be able to spend provider quota. Origin-less local operator clients remain supported. | P0 |
 
 ---
 
@@ -78,6 +79,11 @@ phase in which it is fully implemented.
   `HelpSessionSchema` rejects unknown roles/fields, so page or user text cannot
   inject arbitrary conversation roles. The backend keeps page content in the
   user message only and never merges it into the system policy.
+- **P0-24:** Middleware on every `/v1/*` route rejects browser requests whose
+  `Origin` is not `chrome-extension://...`. Assist and speech accept only JSON;
+  transcription accepts only multipart form data. This blocks ordinary pages'
+  simple cross-origin POST paths before parsing a body or calling a provider.
+  Requests without `Origin` remain available to local operator tools and tests.
 
 ---
 

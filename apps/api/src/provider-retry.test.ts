@@ -331,7 +331,9 @@ describe("bounded provider hedge policy", () => {
 
   it("C2: A valid + B invalid → A wins normally", async () => {
     // A takes 20ms (longer than hedge delay 10ms) so B starts.
-    // A is valid, B is invalid. A wins, B is aborted.
+    // A is valid and B is invalid. Depending on timer scheduling, B may have
+    // finished validation before A wins, so its AbortSignal state is not part
+    // of the contract; the logical result and bounded call count are.
     const testProvider = providerFor((attempt, signal) => {
       if (attempt === 1) return delayed(success, 20);
       return delayed(invalidSchemaResponse, 5);
@@ -339,7 +341,6 @@ describe("bounded provider hedge policy", () => {
     const result = await withValidation(testProvider.provider);
     expect(result).toEqual(success);
     expect(testProvider.attempts()).toBe(2);
-    expect(testProvider.signals[1]!.aborted).toBe(true);
   });
 
   it("C2: max two physical calls", async () => {

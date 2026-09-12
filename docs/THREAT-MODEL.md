@@ -85,9 +85,15 @@ safeguard** is distinguished.
 
 ## 12. Backend abuse
 - **Asset:** cost/availability.
-- **Threat:** unauthenticated or runaway requests.
-- **Mitigation:** server-side quota/rate limit; dedupe. **(P2)**
-- **Phase:** P2.
+- **Threat:** an arbitrary webpage or runaway client spends provider quota.
+- **Attack path:** a hostile page submits a CORS-simple request to the loopback
+  API, including multipart audio, without needing to read the response.
+- **Mitigation:** browser-originated `/v1/*` requests are restricted to
+  Chromium extension origins; endpoint media types are enforced before body
+  parsing/provider calls; physical provider concurrency is bounded. **(P0)**
+- **Remaining risk:** origin-less native local processes can call the service;
+  per-user quotas, authentication and deduplication remain future safeguards.
+- **Phase:** P0 (browser boundary + concurrency); P2 (quotas/auth/dedupe).
 
 ## 13. Repeated requests / loops
 - **Asset:** cost/UX.
