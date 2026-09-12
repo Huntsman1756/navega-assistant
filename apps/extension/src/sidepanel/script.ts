@@ -50,7 +50,6 @@ if (els.voiceControls && els.sttBtn && canRecordVoiceAudio()) {
   els.voiceControls.hidden = false;
 
   const voice = initVoiceController({
-    ttsBtn: els.sttBtn,
     sttBtn: els.sttBtn,
     status: els.status,
     input: els.input,

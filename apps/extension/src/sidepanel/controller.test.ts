@@ -185,6 +185,8 @@ describe("request lifecycle", () => {
     const p2 = c.askHelp();
     await new Promise((r) => setTimeout(r, 20));
     expect(calls.assist).toBe(1);
+    expect(els.helpButton.disabled).toBe(true);
+    expect(els.newHelpButton.disabled).toBe(false);
     resolveAssist(okResult("ok"));
     await Promise.all([p1, p2]);
     expect(calls.assist).toBe(1);
@@ -213,6 +215,7 @@ describe("request lifecycle", () => {
 
   it("maps each backend error code to a friendly, non-technical message", async () => {
     const cases: Array<[string, string]> = [
+      ["backend_offline", "servicio local del asistente no está iniciado"],
       ["network", "No pude conectar con el asistente"],
       ["backend_timeout", "no respondió a tiempo"],
       ["provider_timeout", "Está tardando más de lo normal"],

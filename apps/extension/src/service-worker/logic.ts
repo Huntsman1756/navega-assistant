@@ -35,6 +35,15 @@ export function buildAssistPayload(
 
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
+function isLoopbackBackend(backendUrl: string): boolean {
+  try {
+    const hostname = new URL(backendUrl).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
 function combineSignals(parent: AbortSignal | undefined, timeout: AbortSignal): {
   signal: AbortSignal;
   cleanup: () => void;
@@ -160,16 +169,23 @@ export async function requestAssist(
     outcome = "ok";
     return { type: "GWA_ASSIST_RESULT", ok: true, decision: parsed.data.decision };
   } catch {
-    // Aborted by OUR deadline -> backend_timeout. Any other failure (connection
-    // refused, DNS, reset) is the classic network error. A late response can
-    // never reach the caller because the complete operation is already settled.
+    // Aborted by OUR deadline -> backend_timeout. A connection failure to the
+    // default loopback service is actionable and distinct from a remote network
+    // failure. A late response can never reach the caller because the complete
+    // operation is already settled.
     const cancelled = externalSignal?.aborted === true;
     const timedOut = timeoutController.signal.aborted;
     outcome = cancelled ? "cancelled" : timedOut ? "timeout" : "error";
     return {
       type: "GWA_ASSIST_RESULT",
       ok: false,
-      error: cancelled ? "cancelled" : timedOut ? "backend_timeout" : "network",
+      error: cancelled
+        ? "cancelled"
+        : timedOut
+          ? "backend_timeout"
+          : isLoopbackBackend(backendUrl)
+            ? "backend_offline"
+            : "network",
     };
   } finally {
     clearTimeout(timer);

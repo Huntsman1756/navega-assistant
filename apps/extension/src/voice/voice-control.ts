@@ -40,14 +40,13 @@ const RECORDING_LIMIT_MS = 30000;
 /* ------------------------------------------------------------------ */
 
 export interface VoiceElements {
-  ttsBtn: HTMLButtonElement;
   sttBtn: HTMLButtonElement;
   status: HTMLElement;
   input: HTMLTextAreaElement;
 }
 
 export interface VoiceHandle {
-  playAnswer(assistantText: string): Promise<void>;
+  playAnswer(assistantText: string, button?: HTMLButtonElement): Promise<void>;
   stopPlaying(): void;
   startRecording(): Promise<void>;
   stopRecording(): void;
@@ -75,18 +74,22 @@ let recordingTimer: ReturnType<typeof setTimeout> | null = null;
 /* ------------------------------------------------------------------ */
 
 function setStatus(text: string): void {
+  statusEl.textContent = text;
   if (typeof performance !== "undefined") {
-    console.log(`[perf] voice_status=${text}`);
+    console.log(`[perf] voice_status=${text.length > 0 ? "set" : "cleared"}`);
   }
 }
 
 function setTtsBtnPlaying(playing: boolean): void {
+  if (!ttsBtnEl) return;
   if (playing) {
     ttsBtnEl.textContent = "Detener";
     ttsBtnEl.setAttribute("aria-label", "Detener reproducci\u00F3n de audio");
+    ttsBtnEl.classList.add("playing");
   } else {
     ttsBtnEl.textContent = "Escuchar";
     ttsBtnEl.setAttribute("aria-label", "Escuchar respuesta con voz");
+    ttsBtnEl.classList.remove("playing");
   }
 }
 
@@ -134,7 +137,7 @@ function stopAllTracks(stream: MediaStream | null): void {
 /*  DOM references (set by initVoiceController)                       */
 /* ------------------------------------------------------------------ */
 
-let ttsBtnEl: HTMLButtonElement;
+let ttsBtnEl: HTMLButtonElement | null = null;
 let sttBtnEl: HTMLButtonElement;
 let statusEl: HTMLElement;
 let inputEl: HTMLTextAreaElement;
@@ -148,7 +151,6 @@ let inputEl: HTMLTextAreaElement;
  * Returns a handle with the public methods.
  */
 export function initVoiceController(els: VoiceElements): VoiceHandle {
-  ttsBtnEl = els.ttsBtn;
   sttBtnEl = els.sttBtn;
   statusEl = els.status;
   inputEl = els.input;
@@ -169,7 +171,7 @@ export function initVoiceController(els: VoiceElements): VoiceHandle {
  * Uses the NaN Kokoro endpoint (POST /v1/speech).
  * Button toggles: [Escuchar] \u2192 [Detener] (while playing/generating).
  */
-async function playAnswer(assistantText: string): Promise<void> {
+async function playAnswer(assistantText: string, button?: HTMLButtonElement): Promise<void> {
   if (ttsPlaying) {
     stopPlaying();
     return;
@@ -177,6 +179,7 @@ async function playAnswer(assistantText: string): Promise<void> {
   if (!assistantText || assistantText.trim().length === 0) return;
   if (voiceTransitionInFlight) return;
 
+  ttsBtnEl = button ?? null;
   voiceTransitionInFlight = true;
   ttsPlaying = true;
   setTtsBtnPlaying(true);
@@ -199,6 +202,7 @@ async function playAnswer(assistantText: string): Promise<void> {
       ttsPlaying = false;
       setTtsBtnPlaying(false);
       statusEl.removeAttribute("aria-busy");
+      ttsBtnEl = null;
       return;
     }
 
@@ -219,6 +223,7 @@ async function playAnswer(assistantText: string): Promise<void> {
         ttsAudioBlobUrl = null;
       }
       audioEl = null;
+      ttsBtnEl = null;
     });
 
     audioEl.addEventListener("error", () => {
@@ -231,6 +236,7 @@ async function playAnswer(assistantText: string): Promise<void> {
         ttsAudioBlobUrl = null;
       }
       audioEl = null;
+      ttsBtnEl = null;
     });
 
     await audioEl.play();
@@ -240,6 +246,7 @@ async function playAnswer(assistantText: string): Promise<void> {
     statusEl.removeAttribute("aria-busy");
     const timedOut = err instanceof DOMException && err.name === "TimeoutError";
     setStatus(timedOut ? voiceErrorMessage("speech", 504) : voiceErrorMessage("speech", 0));
+    ttsBtnEl = null;
   } finally {
     voiceTransitionInFlight = false;
   }
@@ -263,6 +270,7 @@ function stopPlaying(): void {
     URL.revokeObjectURL(ttsAudioBlobUrl);
     ttsAudioBlobUrl = null;
   }
+  ttsBtnEl = null;
 }
 
 /**

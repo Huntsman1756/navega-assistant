@@ -40,6 +40,7 @@ function logPerf(metric: string, startedAt: number): void {
  * not sensitive) for debugging, but never rendered in the UI.
  */
 const FRIENDLY_ERRORS: Record<string, string> = {
+  backend_offline: "El servicio local del asistente no está iniciado. Inícialo y vuelve a intentarlo.",
   network: "No pude conectar con el asistente. Inténtalo de nuevo.",
   backend_timeout: "El asistente no respondió a tiempo. Inténtalo de nuevo.",
   provider_timeout: "Está tardando más de lo normal. Inténtalo de nuevo.",
@@ -159,9 +160,7 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
       ttsBtn.setAttribute("aria-label", "Escuchar respuesta con voz");
       ttsBtn.setAttribute("data-assistant-text", turn.text);
       ttsBtn.addEventListener("click", () => {
-        voiceHandle?.playAnswer(turn.text);
-        ttsBtn.textContent = "Detener";
-        ttsBtn.classList.add("playing");
+        void voiceHandle?.playAnswer(turn.text, ttsBtn);
       });
       actions.append(ttsBtn);
       article.append(actions);
@@ -235,7 +234,8 @@ export function createController(facade: ChromeFacade, els: ControllerElements):
     activeRequestController = requestController;
     inFlight = true;
     els.helpButton.disabled = true;
-    els.newHelpButton.disabled = true;
+    // Keep "Nueva ayuda" available as the user's escape hatch: reset aborts
+    // the in-flight request and prevents any late answer from being rendered.
     els.input.disabled = true;
     els.input.value = "";
     hidePermission();
