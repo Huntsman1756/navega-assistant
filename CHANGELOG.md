@@ -50,6 +50,8 @@ remains unchanged.
 - Removed a timer-order-dependent hedge assertion that could fail after the
   alternate attempt had already completed; the test now checks only the
   externally meaningful result and bounded physical call count.
+- Upgraded Vitest across the workspace from 3.2.x to 4.1.11, which includes
+  the upstream fix for `GHSA-82fw-gwwq-j7x9` in `@vitest/mocker`.
 
 ### Validation status
 - Experiment B remains retained as evidence: 2 final provider timeouts in 60
