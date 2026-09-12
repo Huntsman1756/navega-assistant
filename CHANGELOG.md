@@ -47,6 +47,9 @@ remains unchanged.
   JSON or multipart media type before parsing or invoking an upstream provider.
   This prevents arbitrary websites from spending the operator's configured
   provider quota through cross-origin form/simple requests.
+- Stopping or cleaning up voice playback now aborts an in-flight speech
+  request, preventing delayed audio from starting after the user pressed
+  **Detener** or hid the panel.
 - Removed a timer-order-dependent hedge assertion that could fail after the
   alternate attempt had already completed; the test now checks only the
   externally meaningful result and bounded physical call count.

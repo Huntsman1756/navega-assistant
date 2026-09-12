@@ -61,6 +61,7 @@ export interface VoiceHandle {
 let audioEl: AudioElement | null = null;
 let ttsPlaying = false;
 let ttsAudioBlobUrl: string | null = null;
+let ttsRequestController: AbortController | null = null;
 
 let mediaRecorder: MediaRecorder | null = null;
 let recordingStream: MediaStream | null = null;
@@ -186,12 +187,18 @@ async function playAnswer(assistantText: string, button?: HTMLButtonElement): Pr
   setStatus("Generando audio\u2026");
   statusEl.setAttribute("aria-busy", "true");
 
+  const requestController = new AbortController();
+  ttsRequestController = requestController;
+  const requestTimeout = setTimeout(() => {
+    requestController.abort(new DOMException("Speech request timed out", "TimeoutError"));
+  }, 35000);
+
   try {
     const res = await fetch(`${await getBackendUrl()}/v1/speech`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: assistantText, voice: DEFAULT_TTS_VOICE }),
-      signal: AbortSignal.timeout(35000),
+      signal: requestController.signal,
     });
 
     if (!res.ok) {
@@ -207,6 +214,7 @@ async function playAnswer(assistantText: string, button?: HTMLButtonElement): Pr
     }
 
     const blob = await res.blob();
+    if (requestController.signal.aborted || ttsRequestController !== requestController) return;
     setStatus("Reproduciendo\u2026");
 
     audioEl = new Audio();
@@ -241,13 +249,21 @@ async function playAnswer(assistantText: string, button?: HTMLButtonElement): Pr
 
     await audioEl.play();
   } catch (err) {
+    const abortReason = requestController.signal.reason;
+    const cancelled = requestController.signal.aborted
+      && abortReason instanceof DOMException
+      && abortReason.name === "AbortError";
+    if (cancelled) return;
     ttsPlaying = false;
     setTtsBtnPlaying(false);
     statusEl.removeAttribute("aria-busy");
-    const timedOut = err instanceof DOMException && err.name === "TimeoutError";
+    const timedOut = (abortReason instanceof DOMException && abortReason.name === "TimeoutError")
+      || (err instanceof DOMException && err.name === "TimeoutError");
     setStatus(timedOut ? voiceErrorMessage("speech", 504) : voiceErrorMessage("speech", 0));
     ttsBtnEl = null;
   } finally {
+    clearTimeout(requestTimeout);
+    if (ttsRequestController === requestController) ttsRequestController = null;
     voiceTransitionInFlight = false;
   }
 }
@@ -257,6 +273,8 @@ async function playAnswer(assistantText: string, button?: HTMLButtonElement): Pr
  */
 function stopPlaying(): void {
   if (!ttsPlaying) return;
+  ttsRequestController?.abort(new DOMException("Speech playback cancelled", "AbortError"));
+  ttsRequestController = null;
   if (audioEl) {
     audioEl.pause();
     audioEl.src = "";
